@@ -70,6 +70,34 @@ h1 {
   line-height: 1.45;
 }
 
+.control-grid {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.control {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.control-label {
+  font-size: 0.76rem;
+  color: #655f54;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.control-input {
+  border: 1px solid var(--edge);
+  border-radius: 9px;
+  padding: 0.5rem 0.55rem;
+  background: #fff;
+  color: #2f2a23;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
 .meta-row {
   display: flex;
   align-items: center;

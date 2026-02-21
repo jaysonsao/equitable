@@ -5,11 +5,34 @@ const BOSTON_GEOJSON = "/data/boston_neighborhood_boundaries.geojson";
 const COUNTY_COLOR = "#2A9D8F";
 const PURPLE_LOW = "#E9D5FF";
 const PURPLE_HIGH = "#4C1D95";
-const MAP_STYLES = [
+const BASE_MAP_STYLES = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
   { featureType: "poi.business", stylers: [{ visibility: "off" }] },
   { featureType: "transit.station", stylers: [{ visibility: "off" }] },
 ];
+const MAP_THEME_STYLES = {
+  civic: [
+    { elementType: "geometry", stylers: [{ color: "#f7f4ee" }] },
+    { featureType: "road", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+    { featureType: "water", elementType: "geometry", stylers: [{ color: "#d7e6f2" }] },
+  ],
+  gray: [
+    { elementType: "geometry", stylers: [{ color: "#eceff1" }] },
+    { featureType: "water", elementType: "geometry", stylers: [{ color: "#d4dbe0" }] },
+    { featureType: "road", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+  ],
+  blueprint: [
+    { elementType: "geometry", stylers: [{ color: "#e8f1f8" }] },
+    { featureType: "water", elementType: "geometry", stylers: [{ color: "#b7d4ea" }] },
+    { featureType: "road", elementType: "geometry", stylers: [{ color: "#f8fbff" }] },
+  ],
+};
+const MASSACHUSETTS_BOUNDS = {
+  north: 42.88679,
+  south: 41.18705,
+  east: -69.85886,
+  west: -73.50814,
+};
 
 const GOOGLE_MAPS_API_KEY =
   typeof __GOOGLE_MAPS_API__ === "string" ? __GOOGLE_MAPS_API__.trim() : "";
@@ -76,6 +99,31 @@ function getPopulationShade(population, range) {
   const span = range.max - range.min;
   const normalized = span === 0 ? 1 : (population - range.min) / span;
   return interpolateColor(PURPLE_LOW, PURPLE_HIGH, normalized);
+}
+
+function getMapStyles(theme) {
+  const themeStyles = MAP_THEME_STYLES[theme] || MAP_THEME_STYLES.civic;
+  return [...BASE_MAP_STYLES, ...themeStyles];
+}
+
+function expandBoundsLiteral(bounds, latPad, lngPad) {
+  return {
+    north: bounds.north + latPad,
+    south: bounds.south - latPad,
+    east: bounds.east + lngPad,
+    west: bounds.west - lngPad,
+  };
+}
+
+function toBoundsLiteral(bounds) {
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  return {
+    north: ne.lat(),
+    south: sw.lat(),
+    east: ne.lng(),
+    west: sw.lng(),
+  };
 }
 
 function extendBoundsFromGeometry(bounds, geometry) {
@@ -249,15 +297,43 @@ export default function App() {
   const markerRefs = useRef([]);
   const countyPopulationRef = useRef(new Map());
   const populationRangeRef = useRef({ min: 0, max: 1 });
+  const bostonBoundsRef = useRef(null);
 
   const [status, setStatus] = useState("Loading map...");
   const [error, setError] = useState("");
   const [counties, setCounties] = useState([]);
   const [fakeSites, setFakeSites] = useState([]);
   const [populationShadingOn, setPopulationShadingOn] = useState(false);
+  const [mapTheme, setMapTheme] = useState("civic");
+  const [mapScope, setMapScope] = useState("boston");
 
   const allOn = counties.length > 0 && counties.every((county) => county.enabled);
   const populationRange = useMemo(() => getPopulationRange(counties), [counties]);
+
+  const applyMapViewportSettings = useCallback(
+    (scope, theme, fitToScope = false) => {
+      const map = mapRef.current;
+      if (!map) return;
+
+      const scopeBounds =
+        scope === "massachusetts" ? MASSACHUSETTS_BOUNDS : bostonBoundsRef.current || MASSACHUSETTS_BOUNDS;
+
+      map.setOptions({
+        styles: getMapStyles(theme),
+        restriction: {
+          latLngBounds: scopeBounds,
+          strictBounds: true,
+        },
+        minZoom: scope === "massachusetts" ? 7 : 10,
+        maxZoom: 17,
+      });
+
+      if (fitToScope) {
+        map.fitBounds(scopeBounds, scope === "massachusetts" ? 24 : 40);
+      }
+    },
+    []
+  );
 
   const refreshStyles = useCallback(() => {
     if (!mapRef.current) return;
@@ -303,6 +379,14 @@ export default function App() {
   }, [counties, populationRange, refreshStyles, refreshMarkerVisibility]);
 
   useEffect(() => {
+    applyMapViewportSettings(mapScope, mapTheme, false);
+  }, [mapTheme, applyMapViewportSettings]);
+
+  useEffect(() => {
+    applyMapViewportSettings(mapScope, mapTheme, true);
+  }, [mapScope, applyMapViewportSettings]);
+
+  useEffect(() => {
     let active = true;
 
     async function init() {
@@ -317,7 +401,7 @@ export default function App() {
           fullscreenControl: true,
           mapTypeControl: false,
           streetViewControl: false,
-          styles: MAP_STYLES,
+          styles: getMapStyles(mapTheme),
         });
 
         mapRef.current = map;
@@ -361,8 +445,10 @@ export default function App() {
           if (geometry) extendBoundsFromGeometry(bounds, geometry);
         });
         if (!bounds.isEmpty()) {
-          map.fitBounds(bounds, 40);
+          bostonBoundsRef.current = expandBoundsLiteral(toBoundsLiteral(bounds), 0.02, 0.03);
         }
+
+        applyMapViewportSettings(mapScope, mapTheme, true);
 
         markerRefs.current = fakeData.sites.map((site) => {
           const marker = new window.google.maps.Marker({
@@ -460,6 +546,33 @@ export default function App() {
           Counties use strict polygon borders. Toggle population shading to apply a light-to-dark purple
           scale based on relative county population.
         </p>
+
+        <div className="control-grid">
+          <label className="control">
+            <span className="control-label">Map Theme</span>
+            <select
+              className="control-input"
+              value={mapTheme}
+              onChange={(event) => setMapTheme(event.target.value)}
+            >
+              <option value="civic">Civic Light</option>
+              <option value="gray">Muted Gray</option>
+              <option value="blueprint">Blueprint</option>
+            </select>
+          </label>
+
+          <label className="control">
+            <span className="control-label">Map Scope</span>
+            <select
+              className="control-input"
+              value={mapScope}
+              onChange={(event) => setMapScope(event.target.value)}
+            >
+              <option value="boston">Boston Only</option>
+              <option value="massachusetts">Massachusetts</option>
+            </select>
+          </label>
+        </div>
 
         <div className="meta-row">
           <button type="button" className="toggle-all" onClick={toggleAllCounties} disabled={!counties.length}>
