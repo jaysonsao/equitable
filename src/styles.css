@@ -1,0 +1,321 @@
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700&family=Fraunces:opsz,wght@9..144,700&display=swap");
+
+:root {
+  --bg: #f7f2e9;
+  --paper: #fffaf0;
+  --ink: #1f1d1a;
+  --ink-soft: #5a554c;
+  --edge: #d8c9af;
+  --accent: #0b6e4f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  font-family: "Archivo", "Avenir Next", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 12% 14%, #ffd7a6 0, #ffd7a600 35%),
+    radial-gradient(circle at 90% 88%, #d5f0df 0, #d5f0df00 36%),
+    linear-gradient(125deg, #fffdf8 0%, #f2f6ef 100%);
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 390px minmax(0, 1fr);
+  height: 100%;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem;
+  border-right: 1px solid var(--edge);
+  background: color-mix(in oklab, var(--paper) 90%, #ffffff 10%);
+  overflow: auto;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.73rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7a6f5d;
+  font-weight: 700;
+}
+
+h1 {
+  margin: 0;
+  font-family: "Fraunces", serif;
+  font-size: 1.72rem;
+  line-height: 1.06;
+  letter-spacing: -0.01em;
+}
+
+.lede {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.control-grid {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.control {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.control-label {
+  font-size: 0.76rem;
+  color: #655f54;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.control-input {
+  border: 1px solid var(--edge);
+  border-radius: 9px;
+  padding: 0.5rem 0.55rem;
+  background: #fff;
+  color: #2f2a23;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.toggle-all,
+.heatmap-toggle {
+  flex: 1;
+  border-radius: 11px;
+  color: #fff;
+  padding: 0.66rem 0.72rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.toggle-all {
+  border: 1px solid #0d6f50;
+  background: linear-gradient(180deg, #0f8a63, #0b6e4f);
+}
+
+.heatmap-toggle {
+  border: 1px solid #6f6a61;
+  background: linear-gradient(180deg, #746f66, #615b53);
+}
+
+.heatmap-toggle.heatmap-on {
+  border-color: #9c3412;
+  background: linear-gradient(180deg, #d95d39, #b94425);
+}
+
+.toggle-all:disabled,
+.heatmap-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.count-pill {
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  background: #fff;
+  font-size: 0.76rem;
+  color: #5a5248;
+  white-space: nowrap;
+}
+
+.status {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 0.84rem;
+  color: #5f583e;
+}
+
+.status-error {
+  color: #ad1021;
+}
+
+.legend {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.legend-label {
+  font-size: 0.76rem;
+  color: #675f55;
+  font-weight: 600;
+}
+
+.legend-bar {
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid #c9b8dc;
+  background: linear-gradient(90deg, #e9d5ff 0%, #4c1d95 100%);
+}
+
+.list {
+  max-height: 36vh;
+  overflow: auto;
+  padding-right: 0.2rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid var(--edge);
+  background: #ffffffd6;
+  border-radius: 10px;
+  padding: 0.52rem 0.58rem;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.item:hover {
+  border-color: #bfa882;
+  transform: translateY(-1px);
+}
+
+.item-on {
+  border-color: color-mix(in oklab, var(--swatch) 40%, #a59373);
+  box-shadow: 0 6px 16px color-mix(in oklab, var(--swatch) 20%, transparent);
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid #0000001f;
+  background: var(--swatch);
+}
+
+.item-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.item-state {
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 0.14rem 0.5rem;
+  font-size: 0.72rem;
+  color: #6f6559;
+  background: #fff;
+}
+
+.item-on .item-state {
+  border-color: color-mix(in oklab, var(--swatch) 45%, #bca47f);
+  color: #201d19;
+  background: color-mix(in oklab, var(--swatch) 16%, #ffffff);
+}
+
+.dataset {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  border-top: 1px solid var(--edge);
+  padding-top: 0.6rem;
+}
+
+.dataset h2 {
+  margin: 0;
+  font-size: 0.97rem;
+  font-family: "Fraunces", serif;
+}
+
+.dataset-caption {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #6a6358;
+}
+
+.dataset-list {
+  max-height: 24vh;
+  overflow: auto;
+  display: grid;
+  gap: 0.36rem;
+  padding-right: 0.2rem;
+}
+
+.dataset-item {
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  padding: 0.4rem 0.48rem;
+  background: #fff;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.dataset-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #29251f;
+}
+
+.dataset-meta {
+  font-size: 0.75rem;
+  color: #696156;
+}
+
+.info-window {
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+
+.map-wrap {
+  position: relative;
+}
+
+.map {
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 960px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: 52vh minmax(0, 1fr);
+  }
+
+  .panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--edge);
+  }
+
+  .list {
+    max-height: 22vh;
+  }
+
+  .dataset-list {
+    max-height: 19vh;
+  }
+}
