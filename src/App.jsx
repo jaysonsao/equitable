@@ -1,10 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const BOSTON_CENTER = { lat: 42.3601, lng: -71.0589 };
 const BOSTON_GEOJSON = "/data/boston_neighborhood_boundaries.geojson";
 const COUNTY_COLOR = "#2A9D8F";
-const PURPLE_LOW = "#E9D5FF";
-const PURPLE_HIGH = "#4C1D95";
 const BASE_MAP_STYLES = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
   { featureType: "poi.business", stylers: [{ visibility: "off" }] },
@@ -34,71 +32,22 @@ const MASSACHUSETTS_BOUNDS = {
   west: -73.50814,
 };
 
+const PLACE_TYPE_COLORS = {
+  farmers_market: "#F59E0B",
+  restaurant: "#10B981",
+};
+
+const PLACE_TYPE_LABELS = {
+  farmers_market: "Farmers Market",
+  restaurant: "Restaurant",
+};
+
 const GOOGLE_MAPS_API_KEY =
   typeof __GOOGLE_MAPS_API__ === "string" ? __GOOGLE_MAPS_API__.trim() : "";
 
 function getCountyName(feature) {
   const name = feature.getProperty("name");
   return typeof name === "string" && name.trim() ? name.trim() : "Unknown County";
-}
-
-function hashString(input) {
-  let hash = 2166136261;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function seededRandom(seed) {
-  let state = seed >>> 0;
-  return () => {
-    state += 0x6d2b79f5;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function hexToRgb(hex) {
-  const normalized = hex.replace("#", "");
-  return {
-    r: Number.parseInt(normalized.slice(0, 2), 16),
-    g: Number.parseInt(normalized.slice(2, 4), 16),
-    b: Number.parseInt(normalized.slice(4, 6), 16),
-  };
-}
-
-function interpolateColor(hexA, hexB, ratio) {
-  const start = hexToRgb(hexA);
-  const end = hexToRgb(hexB);
-  const t = clamp(ratio, 0, 1);
-
-  const r = Math.round(start.r + (end.r - start.r) * t);
-  const g = Math.round(start.g + (end.g - start.g) * t);
-  const b = Math.round(start.b + (end.b - start.b) * t);
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
-function getPopulationRange(counties) {
-  if (!counties.length) return { min: 0, max: 1 };
-  const values = counties.map((county) => county.population);
-  return {
-    min: Math.min(...values),
-    max: Math.max(...values),
-  };
-}
-
-function getPopulationShade(population, range) {
-  const span = range.max - range.min;
-  const normalized = span === 0 ? 1 : (population - range.min) / span;
-  return interpolateColor(PURPLE_LOW, PURPLE_HIGH, normalized);
 }
 
 function getMapStyles(theme) {
@@ -118,83 +67,21 @@ function expandBoundsLiteral(bounds, latPad, lngPad) {
 function toBoundsLiteral(bounds) {
   const ne = bounds.getNorthEast();
   const sw = bounds.getSouthWest();
-  return {
-    north: ne.lat(),
-    south: sw.lat(),
-    east: ne.lng(),
-    west: sw.lng(),
-  };
+  return { north: ne.lat(), south: sw.lat(), east: ne.lng(), west: sw.lng() };
 }
 
 function extendBoundsFromGeometry(bounds, geometry) {
   const type = geometry.getType();
-
-  if (type === "Point") {
-    bounds.extend(geometry.get());
-    return;
-  }
-
+  if (type === "Point") { bounds.extend(geometry.get()); return; }
   if (type === "MultiPoint" || type === "LineString" || type === "LinearRing") {
-    geometry.getArray().forEach((latLng) => bounds.extend(latLng));
-    return;
+    geometry.getArray().forEach((latLng) => bounds.extend(latLng)); return;
   }
-
   if (type === "Polygon" || type === "MultiLineString") {
-    geometry.getArray().forEach((inner) => extendBoundsFromGeometry(bounds, inner));
-    return;
+    geometry.getArray().forEach((inner) => extendBoundsFromGeometry(bounds, inner)); return;
   }
-
   if (type === "MultiPolygon" || type === "GeometryCollection") {
     geometry.getArray().forEach((inner) => extendBoundsFromGeometry(bounds, inner));
   }
-}
-
-function getOuterRings(geometry) {
-  const rings = [];
-
-  function collect(innerGeometry) {
-    const type = innerGeometry.getType();
-
-    if (type === "Polygon") {
-      const outer = innerGeometry.getArray()?.[0]?.getArray?.();
-      if (outer && outer.length > 2) rings.push(outer);
-      return;
-    }
-
-    if (type === "MultiPolygon" || type === "GeometryCollection") {
-      innerGeometry.getArray().forEach((child) => collect(child));
-    }
-  }
-
-  collect(geometry);
-  return rings;
-}
-
-function getBoundsFromPath(path) {
-  const bounds = new window.google.maps.LatLngBounds();
-  path.forEach((latLng) => bounds.extend(latLng));
-  return bounds;
-}
-
-function randomPointInPolygonPath(path, randomFn) {
-  const polygon = new window.google.maps.Polygon({ paths: path });
-  const bounds = getBoundsFromPath(path);
-
-  const north = bounds.getNorthEast().lat();
-  const east = bounds.getNorthEast().lng();
-  const south = bounds.getSouthWest().lat();
-  const west = bounds.getSouthWest().lng();
-
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    const lat = south + (north - south) * randomFn();
-    const lng = west + (east - west) * randomFn();
-    const point = new window.google.maps.LatLng(lat, lng);
-    if (window.google.maps.geometry.poly.containsLocation(point, polygon)) {
-      return point;
-    }
-  }
-
-  return bounds.getCenter();
 }
 
 function loadGoogleMaps(apiKey) {
@@ -205,87 +92,28 @@ function loadGoogleMaps(apiKey) {
     const existing = document.getElementById("google-maps-js");
     if (existing) {
       existing.addEventListener("load", () => resolve(window.google.maps), { once: true });
-      existing.addEventListener(
-        "error",
-        () => reject(new Error("Google Maps script failed to load.")),
-        { once: true }
-      );
+      existing.addEventListener("error", () => reject(new Error("Google Maps failed to load.")), { once: true });
       return;
     }
-
     const script = document.createElement("script");
     script.id = "google-maps-js";
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
-      apiKey
-    )}&libraries=geometry`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=geometry`;
     script.async = true;
     script.defer = true;
     script.onload = () => resolve(window.google.maps);
-    script.onerror = () => reject(new Error("Google Maps script failed to load."));
+    script.onerror = () => reject(new Error("Google Maps failed to load."));
     document.head.appendChild(script);
   });
 }
 
-function createMarkerIcon(category) {
-  const fillColor = category === "Grocery Store" ? "#3B82F6" : "#F59E0B";
+function buildMarkerIcon(placeType) {
   return {
     path: window.google.maps.SymbolPath.CIRCLE,
-    scale: 7,
-    fillColor,
-    fillOpacity: 0.95,
+    scale: 9,
+    fillColor: PLACE_TYPE_COLORS[placeType] || "#6B7280",
+    fillOpacity: 1,
     strokeColor: "#ffffff",
-    strokeWeight: 1.6,
-  };
-}
-
-function makeFakeCountyData(counties, countyFeatureMap) {
-  const fakeSites = [];
-  const countyWithPopulation = counties.map((county) => {
-    const seed = hashString(county.name);
-    const random = seededRandom(seed);
-    const population = 9000 + Math.floor(random() * 85000);
-
-    const feature = countyFeatureMap.get(county.name);
-    const geometry = feature?.getGeometry();
-    const rings = geometry ? getOuterRings(geometry) : [];
-    const primaryPath = rings[0] || [];
-    const bounds = primaryPath.length ? getBoundsFromPath(primaryPath) : null;
-    const centerLatLng = bounds
-      ? bounds.getCenter()
-      : new window.google.maps.LatLng(BOSTON_CENTER.lat, BOSTON_CENTER.lng);
-
-    const siteCount = 2 + Math.floor(random() * 3);
-    for (let i = 0; i < siteCount; i += 1) {
-      const category = random() < 0.5 ? "Grocery Store" : "Farmers Market";
-      const incomeIndex = 1 + Math.floor(random() * 5);
-      const point =
-        primaryPath.length > 2
-          ? randomPointInPolygonPath(primaryPath, random)
-          : new window.google.maps.LatLng(
-              centerLatLng.lat() + (random() - 0.5) * 0.005,
-              centerLatLng.lng() + (random() - 0.5) * 0.005
-            );
-
-      fakeSites.push({
-        id: `${county.name.toLowerCase().replace(/\s+/g, "-")}-${i + 1}`,
-        county: county.name,
-        category,
-        incomeIndex,
-        label: `${county.name} ${category === "Grocery Store" ? "Grocery" : "Market"} ${i + 1}`,
-        position: { lat: point.lat(), lng: point.lng() },
-      });
-    }
-
-    return {
-      ...county,
-      population,
-      center: { lat: centerLatLng.lat(), lng: centerLatLng.lng() },
-    };
-  });
-
-  return {
-    counties: countyWithPopulation,
-    sites: fakeSites,
+    strokeWeight: 2,
   };
 }
 
@@ -294,97 +122,121 @@ export default function App() {
   const mapRef = useRef(null);
   const infoWindowRef = useRef(null);
   const enabledSetRef = useRef(new Set());
-  const markerRefs = useRef([]);
-  const countyPopulationRef = useRef(new Map());
-  const populationRangeRef = useRef({ min: 0, max: 1 });
   const bostonBoundsRef = useRef(null);
+  const activeMarkersRef = useRef([]);
 
   const [status, setStatus] = useState("Loading map...");
   const [error, setError] = useState("");
-  const [counties, setCounties] = useState([]);
-  const [fakeSites, setFakeSites] = useState([]);
-  const [populationShadingOn, setPopulationShadingOn] = useState(false);
+  const [neighborhoods, setNeighborhoods] = useState([]);
   const [mapTheme, setMapTheme] = useState("civic");
   const [mapScope, setMapScope] = useState("boston");
 
-  const allOn = counties.length > 0 && counties.every((county) => county.enabled);
-  const populationRange = useMemo(() => getPopulationRange(counties), [counties]);
+  // Search state
+  const [searchText, setSearchText] = useState("");
+  const [selectedNeighborhood, setSelectedNeighborhood] = useState("");
+  const [selectedType, setSelectedType] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
-  const applyMapViewportSettings = useCallback(
-    (scope, theme, fitToScope = false) => {
-      const map = mapRef.current;
-      if (!map) return;
-
-      const scopeBounds =
-        scope === "massachusetts" ? MASSACHUSETTS_BOUNDS : bostonBoundsRef.current || MASSACHUSETTS_BOUNDS;
-
-      map.setOptions({
-        styles: getMapStyles(theme),
-        restriction: {
-          latLngBounds: scopeBounds,
-          strictBounds: true,
-        },
-        minZoom: scope === "massachusetts" ? 7 : 10,
-        maxZoom: 17,
-      });
-
-      if (fitToScope) {
-        map.fitBounds(scopeBounds, scope === "massachusetts" ? 24 : 40);
-      }
-    },
-    []
-  );
+  const applyMapViewportSettings = useCallback((scope, theme, fitToScope = false) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const scopeBounds =
+      scope === "massachusetts" ? MASSACHUSETTS_BOUNDS : bostonBoundsRef.current || MASSACHUSETTS_BOUNDS;
+    map.setOptions({
+      styles: getMapStyles(theme),
+      restriction: { latLngBounds: scopeBounds, strictBounds: true },
+      minZoom: scope === "massachusetts" ? 7 : 10,
+      maxZoom: 17,
+    });
+    if (fitToScope) map.fitBounds(scopeBounds, scope === "massachusetts" ? 24 : 40);
+  }, []);
 
   const refreshStyles = useCallback(() => {
     if (!mapRef.current) return;
-
     mapRef.current.data.setStyle((feature) => {
       const county = getCountyName(feature);
       const visible = enabledSetRef.current.has(county);
-      const population = countyPopulationRef.current.get(county)?.population ?? 0;
-      const fill = populationShadingOn
-        ? getPopulationShade(population, populationRangeRef.current)
-        : COUNTY_COLOR;
-
       return {
         clickable: visible,
-        fillColor: fill,
-        fillOpacity: visible ? (populationShadingOn ? 0.62 : 0.38) : 0,
-        strokeColor: populationShadingOn ? "#4C1D95" : COUNTY_COLOR,
-        strokeOpacity: visible ? 0.92 : 0,
+        fillColor: COUNTY_COLOR,
+        fillOpacity: visible ? 0.25 : 0,
+        strokeColor: COUNTY_COLOR,
+        strokeOpacity: visible ? 0.8 : 0,
         strokeWeight: visible ? 2 : 0,
       };
     });
-  }, [populationShadingOn]);
+  }, []);
 
-  const refreshMarkerVisibility = useCallback(() => {
+  // Clear existing markers and place new ones
+  const placeMarkers = useCallback((results) => {
     const map = mapRef.current;
     if (!map) return;
 
-    markerRefs.current.forEach((entry) => {
-      const show = enabledSetRef.current.has(entry.county);
-      entry.marker.setMap(show ? map : null);
+    // Clear old markers
+    activeMarkersRef.current.forEach((m) => m.setMap(null));
+    activeMarkersRef.current = [];
+
+    results.forEach((item) => {
+      if (!item.lat || !item.lng) return;
+      const marker = new window.google.maps.Marker({
+        map,
+        position: { lat: item.lat, lng: item.lng },
+        title: item.name,
+        icon: buildMarkerIcon(item.place_type),
+      });
+
+      marker.addListener("click", () => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "info-window";
+
+        const title = document.createElement("strong");
+        title.textContent = item.name;
+
+        const typeTag = document.createElement("div");
+        typeTag.style.cssText = "font-size:0.75em;color:#6B7280;margin-bottom:4px;";
+        typeTag.textContent = PLACE_TYPE_LABELS[item.place_type] || item.place_type;
+
+        const addr = document.createElement("div");
+        addr.textContent = item.address || item.city || "";
+
+        const hood = document.createElement("div");
+        hood.style.cssText = "font-size:0.8em;color:#6B7280;";
+        hood.textContent = item.neighborhood || "";
+
+        const desc = document.createElement("div");
+        desc.style.cssText = "margin-top:4px;font-size:0.85em;";
+        desc.textContent = item.description || "";
+
+        wrapper.appendChild(title);
+        wrapper.appendChild(typeTag);
+        wrapper.appendChild(addr);
+        if (item.neighborhood) wrapper.appendChild(hood);
+        if (item.description) wrapper.appendChild(desc);
+
+        infoWindowRef.current.setContent(wrapper);
+        infoWindowRef.current.open({ map, anchor: marker });
+      });
+
+      activeMarkersRef.current.push(marker);
     });
+
+    // Fit map to results if any
+    if (results.length > 0 && results.some((r) => r.lat && r.lng)) {
+      const bounds = new window.google.maps.LatLngBounds();
+      results.forEach((r) => { if (r.lat && r.lng) bounds.extend({ lat: r.lat, lng: r.lng }); });
+      map.fitBounds(bounds, 60);
+    }
   }, []);
 
   useEffect(() => {
-    enabledSetRef.current = new Set(counties.filter((county) => county.enabled).map((county) => county.name));
-    countyPopulationRef.current = new Map(
-      counties.map((county) => [county.name, { center: county.center, population: county.population }])
-    );
-    populationRangeRef.current = populationRange;
-
+    enabledSetRef.current = new Set(neighborhoods.map((n) => n.name));
     refreshStyles();
-    refreshMarkerVisibility();
-  }, [counties, populationRange, refreshStyles, refreshMarkerVisibility]);
+  }, [neighborhoods, refreshStyles]);
 
-  useEffect(() => {
-    applyMapViewportSettings(mapScope, mapTheme, false);
-  }, [mapTheme, applyMapViewportSettings]);
-
-  useEffect(() => {
-    applyMapViewportSettings(mapScope, mapTheme, true);
-  }, [mapScope, applyMapViewportSettings]);
+  useEffect(() => { applyMapViewportSettings(mapScope, mapTheme, false); }, [mapTheme, applyMapViewportSettings]);
+  useEffect(() => { applyMapViewportSettings(mapScope, mapTheme, true); }, [mapScope, applyMapViewportSettings]);
 
   useEffect(() => {
     let active = true;
@@ -407,37 +259,23 @@ export default function App() {
         mapRef.current = map;
         infoWindowRef.current = new window.google.maps.InfoWindow();
 
-        setStatus("Loading county boundaries...");
+        setStatus("Loading neighborhood boundaries...");
         const response = await fetch(BOSTON_GEOJSON);
         if (!response.ok) throw new Error(`Boundary file failed to load (${response.status}).`);
 
         const geoJson = await response.json();
         const features = map.data.addGeoJson(geoJson);
 
-        const countyFeatureMap = new Map();
+        const seen = new Map();
         const names = [];
         features.forEach((feature) => {
-          const countyName = getCountyName(feature);
-          if (!countyFeatureMap.has(countyName)) {
-            countyFeatureMap.set(countyName, feature);
-            names.push(countyName);
-          }
+          const name = getCountyName(feature);
+          if (!seen.has(name)) { seen.set(name, feature); names.push(name); }
         });
 
         names.sort((a, b) => a.localeCompare(b));
-        const baseCounties = names.map((name) => ({
-          name,
-          enabled: true,
-          color: COUNTY_COLOR,
-          population: 0,
-          center: BOSTON_CENTER,
-        }));
-
-        const fakeData = makeFakeCountyData(baseCounties, countyFeatureMap);
-
         if (!active) return;
-        setCounties(fakeData.counties);
-        setFakeSites(fakeData.sites);
+        setNeighborhoods(names.map((name) => ({ name })));
 
         const bounds = new window.google.maps.LatLngBounds();
         map.data.forEach((feature) => {
@@ -450,62 +288,13 @@ export default function App() {
 
         applyMapViewportSettings(mapScope, mapTheme, true);
 
-        markerRefs.current = fakeData.sites.map((site) => {
-          const marker = new window.google.maps.Marker({
-            map,
-            position: site.position,
-            title: site.label,
-            icon: createMarkerIcon(site.category),
-          });
-
-          marker.addListener("click", () => {
-            const wrapper = document.createElement("div");
-            wrapper.className = "info-window";
-
-            const title = document.createElement("strong");
-            title.textContent = site.label;
-
-            const line1 = document.createElement("div");
-            line1.textContent = `${site.category} | ${site.county}`;
-
-            const line2 = document.createElement("div");
-            line2.textContent = `Income Index: ${site.incomeIndex}`;
-
-            wrapper.appendChild(title);
-            wrapper.appendChild(line1);
-            wrapper.appendChild(line2);
-
-            infoWindowRef.current.setContent(wrapper);
-            infoWindowRef.current.open({ map, anchor: marker });
-          });
-
-          return { marker, county: site.county };
-        });
-
         map.data.addListener("click", (event) => {
-          const county = getCountyName(event.feature);
-          if (!enabledSetRef.current.has(county)) return;
-
-          const population = countyPopulationRef.current.get(county)?.population ?? "N/A";
-          const content = document.createElement("div");
-
-          const name = document.createElement("strong");
-          name.textContent = county;
-
-          const pop = document.createElement("div");
-          pop.textContent = `Population (fake): ${population}`;
-
-          content.appendChild(name);
-          content.appendChild(pop);
-
-          infoWindowRef.current.setPosition(event.latLng);
-          infoWindowRef.current.setContent(content);
-          infoWindowRef.current.open(map);
+          const name = getCountyName(event.feature);
+          // Clicking a neighborhood sets it as the filter and searches
+          setSelectedNeighborhood(name);
         });
 
-        setStatus(
-          `Map ready. ${fakeData.counties.length} counties loaded, ${fakeData.sites.length} fake food access points generated.`
-        );
+        setStatus(`Map ready. ${names.length} neighborhoods loaded. Use search to explore.`);
       } catch (err) {
         if (!active) return;
         setError(err.message);
@@ -514,134 +303,170 @@ export default function App() {
     }
 
     init();
-
-    return () => {
-      active = false;
-      markerRefs.current.forEach(({ marker }) => marker.setMap(null));
-      markerRefs.current = [];
-    };
+    return () => { active = false; };
   }, []);
 
-  const toggleCounty = (name) => {
-    setCounties((current) =>
-      current.map((county) => (county.name === name ? { ...county, enabled: !county.enabled } : county))
-    );
-  };
+  // Run search whenever selectedNeighborhood, selectedType, or searchText changes (only if a filter is active)
+  useEffect(() => {
+    if (!selectedNeighborhood && !selectedType && !searchText.trim()) return;
+    runSearch();
+  }, [selectedNeighborhood, selectedType]);
 
-  const toggleAllCounties = () => {
-    setCounties((current) => current.map((county) => ({ ...county, enabled: !allOn })));
-  };
+  async function runSearch() {
+    const params = new URLSearchParams();
+    if (searchText.trim()) params.set("search", searchText.trim());
+    if (selectedNeighborhood) params.set("neighborhood", selectedNeighborhood);
+    if (selectedType) params.set("place_type", selectedType);
 
-  const enabledCount = useMemo(
-    () => counties.reduce((acc, county) => acc + (county.enabled ? 1 : 0), 0),
-    [counties]
-  );
+    setSearching(true);
+    setHasSearched(true);
+    try {
+      const res = await fetch(`/api/food-distributors?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSearchResults(data);
+        placeMarkers(data);
+      }
+    } catch (_) {
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function clearSearch() {
+    setSearchText("");
+    setSelectedNeighborhood("");
+    setSelectedType("");
+    setSearchResults([]);
+    setHasSearched(false);
+    activeMarkersRef.current.forEach((m) => m.setMap(null));
+    activeMarkersRef.current = [];
+  }
+
+  const hasFilters = searchText.trim() || selectedNeighborhood || selectedType;
 
   return (
     <div className="shell">
       <aside className="panel">
-        <p className="eyebrow">Google Maps + Synthetic County Data</p>
-        <h1>Boston County Access Explorer</h1>
-        <p className="lede">
-          Counties use strict polygon borders. Toggle population shading to apply a light-to-dark purple
-          scale based on relative county population.
-        </p>
+        <p className="eyebrow">Boston Food Equity Explorer</p>
+        <h1>Food Access Map</h1>
 
-        <div className="control-grid">
+        {/* Search bar */}
+        <div className="search-box">
+          <input
+            className="search-input"
+            type="text"
+            placeholder="Search by name, description..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runSearch()}
+          />
+          <button className="search-btn" onClick={runSearch} disabled={searching}>
+            {searching ? "..." : "Search"}
+          </button>
+        </div>
+
+        {/* Type filter chips */}
+        <div className="filter-chips">
+          {[
+            { value: "", label: "All Types" },
+            { value: "farmers_market", label: "Farmers Markets" },
+            { value: "restaurant", label: "Restaurants" },
+          ].map((opt) => (
+            <button
+              key={opt.value}
+              className={`chip ${selectedType === opt.value ? "chip-active" : ""}`}
+              onClick={() => setSelectedType(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Neighborhood dropdown */}
+        <div className="filter-row">
+          <select
+            className="control-input"
+            value={selectedNeighborhood}
+            onChange={(e) => setSelectedNeighborhood(e.target.value)}
+          >
+            <option value="">All Neighborhoods</option>
+            {neighborhoods.map((n) => (
+              <option key={n.name} value={n.name}>{n.name}</option>
+            ))}
+          </select>
+          {hasFilters && (
+            <button className="clear-btn" onClick={clearSearch}>Clear</button>
+          )}
+        </div>
+
+        {/* Map controls */}
+        <div className="control-grid" style={{ marginTop: "12px" }}>
           <label className="control">
             <span className="control-label">Map Theme</span>
-            <select
-              className="control-input"
-              value={mapTheme}
-              onChange={(event) => setMapTheme(event.target.value)}
-            >
+            <select className="control-input" value={mapTheme} onChange={(e) => setMapTheme(e.target.value)}>
               <option value="civic">Civic Light</option>
               <option value="gray">Muted Gray</option>
               <option value="blueprint">Blueprint</option>
             </select>
           </label>
-
           <label className="control">
             <span className="control-label">Map Scope</span>
-            <select
-              className="control-input"
-              value={mapScope}
-              onChange={(event) => setMapScope(event.target.value)}
-            >
+            <select className="control-input" value={mapScope} onChange={(e) => setMapScope(e.target.value)}>
               <option value="boston">Boston Only</option>
               <option value="massachusetts">Massachusetts</option>
             </select>
           </label>
         </div>
 
-        <div className="meta-row">
-          <button type="button" className="toggle-all" onClick={toggleAllCounties} disabled={!counties.length}>
-            {allOn ? "Hide All Counties" : "Show All Counties"}
-          </button>
-          <span className="count-pill">{enabledCount} visible</span>
-        </div>
-
-        <div className="meta-row">
-          <button
-            type="button"
-            className={`heatmap-toggle ${populationShadingOn ? "heatmap-on" : ""}`}
-            onClick={() => setPopulationShadingOn((current) => !current)}
-            disabled={!counties.length}
-          >
-            {populationShadingOn ? "Population Shading: On" : "Population Shading: Off"}
-          </button>
-          <span className="count-pill">Purple Scale</span>
-        </div>
-
-        {populationShadingOn && (
-          <div className="legend" aria-label="Population shading legend">
-            <span className="legend-label">Low</span>
-            <span className="legend-bar" />
-            <span className="legend-label">High</span>
-          </div>
-        )}
-
         <p className={`status ${error ? "status-error" : ""}`}>{error || status}</p>
 
-        <div className="list" role="list" aria-label="County toggles">
-          {counties.map((county) => (
-            <button
-              key={county.name}
-              type="button"
-              className={`item ${county.enabled ? "item-on" : ""}`}
-              style={{
-                "--swatch": populationShadingOn
-                  ? getPopulationShade(county.population, populationRange)
-                  : COUNTY_COLOR,
-              }}
-              onClick={() => toggleCounty(county.name)}
-              aria-pressed={county.enabled}
-            >
-              <span className="swatch" aria-hidden="true" />
-              <span className="item-label">{county.name}</span>
-              <span className="item-state">Pop {county.population.toLocaleString()}</span>
-            </button>
-          ))}
+        {/* Legend */}
+        <div className="legend-row">
+          <span className="legend-dot" style={{ background: "#F59E0B" }} /> Farmers Market
+          <span className="legend-dot" style={{ background: "#10B981", marginLeft: "12px" }} /> Restaurant
         </div>
 
-        <section className="dataset">
-          <h2>Fake Food Access Data</h2>
-          <p className="dataset-caption">Category: Grocery Store or Farmers Market | Income Index: 1-5</p>
-          <div className="dataset-list" role="list" aria-label="Fake food access data">
-            {fakeSites.map((site) => (
-              <div key={site.id} className="dataset-item" role="listitem">
-                <span className="dataset-name">{site.label}</span>
-                <span className="dataset-meta">
-                  {site.category} | {site.county} | Income {site.incomeIndex}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* Search results list */}
+        {hasSearched && (
+          <section className="dataset">
+            <h2>Results</h2>
+            <p className="dataset-caption">
+              {searching ? "Searching..." : `${searchResults.length} location${searchResults.length !== 1 ? "s" : ""} found`}
+            </p>
+            {!searching && searchResults.length === 0 && (
+              <p className="dataset-caption">No results match your filters.</p>
+            )}
+            <div className="dataset-list" role="list">
+              {searchResults.map((item, i) => (
+                <div
+                  key={i}
+                  className="dataset-item dataset-item-clickable"
+                  role="listitem"
+                  onClick={() => {
+                    if (!item.lat || !item.lng || !mapRef.current) return;
+                    mapRef.current.panTo({ lat: item.lat, lng: item.lng });
+                    mapRef.current.setZoom(15);
+                  }}
+                >
+                  <span
+                    className="result-dot"
+                    style={{ background: PLACE_TYPE_COLORS[item.place_type] || "#6B7280" }}
+                  />
+                  <div className="result-text">
+                    <span className="dataset-name">{item.name}</span>
+                    <span className="dataset-meta">{item.neighborhood || item.city}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </aside>
 
       <main className="map-wrap">
-        <div ref={mapElRef} className="map" aria-label="Boston county map" />
+        <div ref={mapElRef} className="map" aria-label="Boston neighborhood map" />
       </main>
     </div>
   );
