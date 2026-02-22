@@ -3,11 +3,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const BOSTON_CENTER = { lat: 42.3601, lng: -71.0589 };
 const BOSTON_GEOJSON = "/data/boston_neighborhood_boundaries.geojson";
 const COUNTY_COLOR = "#2A9D8F";
+
 const BASE_MAP_STYLES = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
   { featureType: "poi.business", stylers: [{ visibility: "off" }] },
   { featureType: "transit.station", stylers: [{ visibility: "off" }] },
 ];
+
 const MAP_THEME_STYLES = {
   civic: [
     { elementType: "geometry", stylers: [{ color: "#f7f4ee" }] },
@@ -25,6 +27,7 @@ const MAP_THEME_STYLES = {
     { featureType: "road", elementType: "geometry", stylers: [{ color: "#f8fbff" }] },
   ],
 };
+
 const MASSACHUSETTS_BOUNDS = {
   north: 42.88679,
   south: 41.18705,
@@ -35,19 +38,27 @@ const MASSACHUSETTS_BOUNDS = {
 const PLACE_TYPE_COLORS = {
   farmers_market: "#F59E0B",
   restaurant: "#10B981",
+  grocery_store: "#3B82F6",
 };
 
 const PLACE_TYPE_LABELS = {
   farmers_market: "Farmers Market",
   restaurant: "Restaurant",
+  grocery_store: "Grocery Store",
 };
 
 const GOOGLE_MAPS_API_KEY =
   typeof __GOOGLE_MAPS_API__ === "string" ? __GOOGLE_MAPS_API__.trim() : "";
 
-function getCountyName(feature) {
+const MIN_RADIUS_MILES = 0.5;
+const DEFAULT_RADIUS_MILES = 0.5;
+const DEFAULT_LIMIT = 350;
+const PREVIEW_SAMPLE_PCT = 0.1;
+const METERS_PER_MILE = 1609.344;
+
+function getNeighborhoodName(feature) {
   const name = feature.getProperty("name");
-  return typeof name === "string" && name.trim() ? name.trim() : "Unknown County";
+  return typeof name === "string" && name.trim() ? name.trim() : "Unknown Neighborhood";
 }
 
 function getMapStyles(theme) {
@@ -72,13 +83,21 @@ function toBoundsLiteral(bounds) {
 
 function extendBoundsFromGeometry(bounds, geometry) {
   const type = geometry.getType();
-  if (type === "Point") { bounds.extend(geometry.get()); return; }
+  if (type === "Point") {
+    bounds.extend(geometry.get());
+    return;
+  }
+
   if (type === "MultiPoint" || type === "LineString" || type === "LinearRing") {
-    geometry.getArray().forEach((latLng) => bounds.extend(latLng)); return;
+    geometry.getArray().forEach((latLng) => bounds.extend(latLng));
+    return;
   }
+
   if (type === "Polygon" || type === "MultiLineString") {
-    geometry.getArray().forEach((inner) => extendBoundsFromGeometry(bounds, inner)); return;
+    geometry.getArray().forEach((inner) => extendBoundsFromGeometry(bounds, inner));
+    return;
   }
+
   if (type === "MultiPolygon" || type === "GeometryCollection") {
     geometry.getArray().forEach((inner) => extendBoundsFromGeometry(bounds, inner));
   }
@@ -95,6 +114,7 @@ function loadGoogleMaps(apiKey) {
       existing.addEventListener("error", () => reject(new Error("Google Maps failed to load.")), { once: true });
       return;
     }
+
     const script = document.createElement("script");
     script.id = "google-maps-js";
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=geometry`;
@@ -109,7 +129,7 @@ function loadGoogleMaps(apiKey) {
 function buildMarkerIcon(placeType) {
   return {
     path: window.google.maps.SymbolPath.CIRCLE,
-    scale: 9,
+    scale: 8,
     fillColor: PLACE_TYPE_COLORS[placeType] || "#6B7280",
     fillOpacity: 1,
     strokeColor: "#ffffff",
@@ -121,29 +141,36 @@ export default function App() {
   const mapElRef = useRef(null);
   const mapRef = useRef(null);
   const infoWindowRef = useRef(null);
-  const enabledSetRef = useRef(new Set());
   const bostonBoundsRef = useRef(null);
   const activeMarkersRef = useRef([]);
+  const pinMarkerRef = useRef(null);
+  const centerMarkerRef = useRef(null);
+  const radiusCircleRef = useRef(null);
 
   const [status, setStatus] = useState("Loading map...");
   const [error, setError] = useState("");
-  const [neighborhoods, setNeighborhoods] = useState([]);
   const [mapTheme, setMapTheme] = useState("civic");
   const [mapScope, setMapScope] = useState("boston");
 
-  // Search state
-  const [searchText, setSearchText] = useState("");
-  const [selectedNeighborhood, setSelectedNeighborhood] = useState("");
+  const [addressInput, setAddressInput] = useState("");
   const [selectedType, setSelectedType] = useState("");
+  const [radiusMiles, setRadiusMiles] = useState(String(DEFAULT_RADIUS_MILES));
+  const [droppedPin, setDroppedPin] = useState(null);
+  const [previewResults, setPreviewResults] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [searchCenter, setSearchCenter] = useState(null);
+  const [lastSearchSource, setLastSearchSource] = useState("");
+  const [lastResolvedAddress, setLastResolvedAddress] = useState("");
 
   const applyMapViewportSettings = useCallback((scope, theme, fitToScope = false) => {
     const map = mapRef.current;
     if (!map) return;
+
     const scopeBounds =
       scope === "massachusetts" ? MASSACHUSETTS_BOUNDS : bostonBoundsRef.current || MASSACHUSETTS_BOUNDS;
+
     map.setOptions({
       styles: getMapStyles(theme),
       restriction: { latLngBounds: scopeBounds, strictBounds: true },
@@ -153,33 +180,76 @@ export default function App() {
     if (fitToScope) map.fitBounds(scopeBounds, scope === "massachusetts" ? 24 : 40);
   }, []);
 
-  const refreshStyles = useCallback(() => {
+  const refreshBoundaryStyles = useCallback(() => {
     if (!mapRef.current) return;
-    mapRef.current.data.setStyle((feature) => {
-      const county = getCountyName(feature);
-      const visible = enabledSetRef.current.has(county);
-      return {
-        clickable: visible,
-        fillColor: COUNTY_COLOR,
-        fillOpacity: visible ? 0.25 : 0,
-        strokeColor: COUNTY_COLOR,
-        strokeOpacity: visible ? 0.8 : 0,
-        strokeWeight: visible ? 2 : 0,
-      };
-    });
+    mapRef.current.data.setStyle(() => ({
+      clickable: true,
+      fillColor: COUNTY_COLOR,
+      fillOpacity: 0.2,
+      strokeColor: COUNTY_COLOR,
+      strokeOpacity: 0.8,
+      strokeWeight: 2,
+    }));
   }, []);
 
-  // Clear existing markers and place new ones
-  const placeMarkers = useCallback((results) => {
+  const clearResultMarkers = useCallback(() => {
+    activeMarkersRef.current.forEach((marker) => marker.setMap(null));
+    activeMarkersRef.current = [];
+  }, []);
+
+  const clearSearchOverlay = useCallback(() => {
+    if (centerMarkerRef.current) {
+      centerMarkerRef.current.setMap(null);
+      centerMarkerRef.current = null;
+    }
+    if (radiusCircleRef.current) {
+      radiusCircleRef.current.setMap(null);
+      radiusCircleRef.current = null;
+    }
+  }, []);
+
+  const renderSearchOverlay = useCallback((center, radiusInMiles) => {
+    const map = mapRef.current;
+    if (!map || !center) return;
+
+    clearSearchOverlay();
+
+    centerMarkerRef.current = new window.google.maps.Marker({
+      map,
+      position: center,
+      title: "Search center",
+      icon: {
+        path: window.google.maps.SymbolPath.CIRCLE,
+        scale: 7,
+        fillColor: "#B91C1C",
+        fillOpacity: 1,
+        strokeColor: "#ffffff",
+        strokeWeight: 2,
+      },
+    });
+
+    radiusCircleRef.current = new window.google.maps.Circle({
+      map,
+      center,
+      radius: radiusInMiles * METERS_PER_MILE,
+      strokeColor: "#B91C1C",
+      strokeOpacity: 0.85,
+      strokeWeight: 2,
+      fillColor: "#FCA5A5",
+      fillOpacity: 0.15,
+    });
+  }, [clearSearchOverlay]);
+
+  const placeMarkers = useCallback((results, center, radiusInMiles) => {
     const map = mapRef.current;
     if (!map) return;
 
-    // Clear old markers
-    activeMarkersRef.current.forEach((m) => m.setMap(null));
-    activeMarkersRef.current = [];
+    clearResultMarkers();
+    renderSearchOverlay(center, radiusInMiles);
 
     results.forEach((item) => {
-      if (!item.lat || !item.lng) return;
+      if (item.lat == null || item.lng == null) return;
+
       const marker = new window.google.maps.Marker({
         map,
         position: { lat: item.lat, lng: item.lng },
@@ -192,28 +262,23 @@ export default function App() {
         wrapper.className = "info-window";
 
         const title = document.createElement("strong");
-        title.textContent = item.name;
+        title.textContent = item.name || "Unknown";
 
         const typeTag = document.createElement("div");
-        typeTag.style.cssText = "font-size:0.75em;color:#6B7280;margin-bottom:4px;";
-        typeTag.textContent = PLACE_TYPE_LABELS[item.place_type] || item.place_type;
+        typeTag.className = "info-window-muted";
+        typeTag.textContent = PLACE_TYPE_LABELS[item.place_type] || item.place_type || "Unknown Type";
 
-        const addr = document.createElement("div");
-        addr.textContent = item.address || item.city || "";
+        const address = document.createElement("div");
+        address.textContent = item.address || item.city || "No address";
 
-        const hood = document.createElement("div");
-        hood.style.cssText = "font-size:0.8em;color:#6B7280;";
-        hood.textContent = item.neighborhood || "";
-
-        const desc = document.createElement("div");
-        desc.style.cssText = "margin-top:4px;font-size:0.85em;";
-        desc.textContent = item.description || "";
+        const neighborhood = document.createElement("div");
+        neighborhood.className = "info-window-muted";
+        neighborhood.textContent = item.neighborhood || "";
 
         wrapper.appendChild(title);
         wrapper.appendChild(typeTag);
-        wrapper.appendChild(addr);
-        if (item.neighborhood) wrapper.appendChild(hood);
-        if (item.description) wrapper.appendChild(desc);
+        wrapper.appendChild(address);
+        if (item.neighborhood) wrapper.appendChild(neighborhood);
 
         infoWindowRef.current.setContent(wrapper);
         infoWindowRef.current.open({ map, anchor: marker });
@@ -222,21 +287,33 @@ export default function App() {
       activeMarkersRef.current.push(marker);
     });
 
-    // Fit map to results if any
-    if (results.length > 0 && results.some((r) => r.lat && r.lng)) {
+    if (center) {
       const bounds = new window.google.maps.LatLngBounds();
-      results.forEach((r) => { if (r.lat && r.lng) bounds.extend({ lat: r.lat, lng: r.lng }); });
-      map.fitBounds(bounds, 60);
+      bounds.extend(center);
+      results.forEach((item) => {
+        if (item.lat == null || item.lng == null) return;
+        bounds.extend({ lat: item.lat, lng: item.lng });
+      });
+      map.fitBounds(bounds, 90);
     }
-  }, []);
+  }, [clearResultMarkers, renderSearchOverlay]);
+
+  const restorePreview = useCallback(() => {
+    if (previewResults.length > 0) {
+      placeMarkers(previewResults, null, DEFAULT_RADIUS_MILES);
+      setStatus(
+        `Map ready. Showing ${previewResults.length} sampled locations (10%). Enter an address or drop a pin.`
+      );
+    } else {
+      clearResultMarkers();
+      clearSearchOverlay();
+      setStatus("Map ready. Enter an address or drop a pin, then search by radius.");
+    }
+  }, [clearResultMarkers, clearSearchOverlay, placeMarkers, previewResults]);
 
   useEffect(() => {
-    enabledSetRef.current = new Set(neighborhoods.map((n) => n.name));
-    refreshStyles();
-  }, [neighborhoods, refreshStyles]);
-
-  useEffect(() => { applyMapViewportSettings(mapScope, mapTheme, false); }, [mapTheme, applyMapViewportSettings]);
-  useEffect(() => { applyMapViewportSettings(mapScope, mapTheme, true); }, [mapScope, applyMapViewportSettings]);
+    applyMapViewportSettings(mapScope, mapTheme, false);
+  }, [mapTheme, mapScope, applyMapViewportSettings]);
 
   useEffect(() => {
     let active = true;
@@ -262,21 +339,8 @@ export default function App() {
         setStatus("Loading neighborhood boundaries...");
         const response = await fetch(BOSTON_GEOJSON);
         if (!response.ok) throw new Error(`Boundary file failed to load (${response.status}).`);
-
         const geoJson = await response.json();
-        const features = map.data.addGeoJson(geoJson);
-
-        const seen = new Map();
-        const names = [];
-        features.forEach((feature) => {
-          const name = getCountyName(feature);
-          if (!seen.has(name)) { seen.set(name, feature); names.push(name); }
-        });
-
-        names.sort((a, b) => a.localeCompare(b));
-        if (!active) return;
-        setNeighborhoods(names.map((name) => ({ name })));
-
+        map.data.addGeoJson(geoJson);
         const bounds = new window.google.maps.LatLngBounds();
         map.data.forEach((feature) => {
           const geometry = feature.getGeometry();
@@ -286,15 +350,43 @@ export default function App() {
           bostonBoundsRef.current = expandBoundsLiteral(toBoundsLiteral(bounds), 0.02, 0.03);
         }
 
+        refreshBoundaryStyles();
         applyMapViewportSettings(mapScope, mapTheme, true);
 
         map.data.addListener("click", (event) => {
-          const name = getCountyName(event.feature);
-          // Clicking a neighborhood sets it as the filter and searches
-          setSelectedNeighborhood(name);
+          const name = getNeighborhoodName(event.feature);
+          const nextPin = { lat: event.latLng.lat(), lng: event.latLng.lng() };
+          setDroppedPin(nextPin);
+
+          const content = document.createElement("strong");
+          content.textContent = `${name} (pin set)`;
+          infoWindowRef.current.setPosition(event.latLng);
+          infoWindowRef.current.setContent(content);
+          infoWindowRef.current.open(map);
         });
 
-        setStatus(`Map ready. ${names.length} neighborhoods loaded. Use search to explore.`);
+        map.addListener("click", (event) => {
+          const nextPin = { lat: event.latLng.lat(), lng: event.latLng.lng() };
+          setDroppedPin(nextPin);
+        });
+
+        setStatus("Loading sampled locations...");
+        const previewResponse = await fetch(`/api/food-distributors?sample_pct=${PREVIEW_SAMPLE_PCT}`);
+        if (!previewResponse.ok) {
+          throw new Error(`Preview data failed to load (${previewResponse.status}).`);
+        }
+        const previewData = await previewResponse.json();
+        if (!active) return;
+
+        setPreviewResults(Array.isArray(previewData) ? previewData : []);
+        if (Array.isArray(previewData) && previewData.length > 0) {
+          placeMarkers(previewData, null, DEFAULT_RADIUS_MILES);
+          setStatus(
+            `Map ready. Showing ${previewData.length} sampled locations (10%). Enter an address or drop a pin.`
+          );
+        } else {
+          setStatus("Map ready. No preview locations returned.");
+        }
       } catch (err) {
         if (!active) return;
         setError(err.message);
@@ -303,109 +395,223 @@ export default function App() {
     }
 
     init();
-    return () => { active = false; };
-  }, []);
+    return () => {
+      active = false;
+      clearResultMarkers();
+      clearSearchOverlay();
+      if (pinMarkerRef.current) {
+        pinMarkerRef.current.setMap(null);
+        pinMarkerRef.current = null;
+      }
+    };
+  }, [
+    applyMapViewportSettings,
+    clearResultMarkers,
+    clearSearchOverlay,
+    mapScope,
+    mapTheme,
+    placeMarkers,
+    refreshBoundaryStyles,
+  ]);
 
-  // Run search whenever selectedNeighborhood, selectedType, or searchText changes (only if a filter is active)
   useEffect(() => {
-    if (!selectedNeighborhood && !selectedType && !searchText.trim()) return;
-    runSearch();
-  }, [selectedNeighborhood, selectedType]);
+    const map = mapRef.current;
+    if (!map) return;
 
-  async function runSearch() {
-    const params = new URLSearchParams();
-    if (searchText.trim()) params.set("search", searchText.trim());
-    if (selectedNeighborhood) params.set("neighborhood", selectedNeighborhood);
-    if (selectedType) params.set("place_type", selectedType);
+    if (!droppedPin) {
+      if (pinMarkerRef.current) {
+        pinMarkerRef.current.setMap(null);
+        pinMarkerRef.current = null;
+      }
+      return;
+    }
+
+    if (!pinMarkerRef.current) {
+      pinMarkerRef.current = new window.google.maps.Marker({
+        map,
+        position: droppedPin,
+        title: "Dropped pin",
+        icon: {
+          path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+          scale: 6,
+          fillColor: "#1D4ED8",
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 1.5,
+        },
+      });
+    } else {
+      pinMarkerRef.current.setPosition(droppedPin);
+      pinMarkerRef.current.setMap(map);
+    }
+  }, [droppedPin]);
+
+  async function runRadiusSearch(sourceHint) {
+    setError("");
+
+    const parsedRadius = Number.parseFloat(radiusMiles);
+    if (!Number.isFinite(parsedRadius) || parsedRadius < MIN_RADIUS_MILES) {
+      setError(`Radius must be at least ${MIN_RADIUS_MILES} miles.`);
+      return;
+    }
+
+    const preferAddress = sourceHint === "address";
+    const preferPin = sourceHint === "pin";
+    const hasAddress = addressInput.trim().length > 0;
+    const useAddress = preferAddress || (!preferPin && hasAddress);
+
+    const payload = {
+      radius_miles: parsedRadius,
+      limit: DEFAULT_LIMIT,
+    };
+    if (selectedType) payload.place_type = selectedType;
+
+    if (useAddress) {
+      if (!hasAddress) {
+        setError("Enter an address before searching by address.");
+        return;
+      }
+      payload.address = addressInput.trim();
+    } else {
+      if (!droppedPin) {
+        setError("Drop a pin on the map before searching by pin.");
+        return;
+      }
+      payload.pin = droppedPin;
+    }
 
     setSearching(true);
     setHasSearched(true);
+    setLastResolvedAddress("");
     try {
-      const res = await fetch(`/api/food-distributors?${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        setSearchResults(data);
-        placeMarkers(data);
+      const response = await fetch("/api/food-distributors/search-radius", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || `Search failed (${response.status})`);
       }
-    } catch (_) {
+
+      setSearchResults(data.results || []);
+      setSearchCenter(data.search_center || null);
+      setLastSearchSource(data.search_source || (useAddress ? "address" : "pin"));
+      if (data?.geocode?.formatted_address) {
+        setLastResolvedAddress(data.geocode.formatted_address);
+      }
+
+      placeMarkers(data.results || [], data.search_center || null, parsedRadius);
+      setStatus(`Found ${data.count ?? (data.results || []).length} location(s) within ${parsedRadius} miles.`);
+    } catch (err) {
       setSearchResults([]);
+      setSearchCenter(null);
+      restorePreview();
+      setError(err.message || "Search failed");
     } finally {
       setSearching(false);
     }
   }
 
-  function clearSearch() {
-    setSearchText("");
-    setSelectedNeighborhood("");
-    setSelectedType("");
+  function clearSearchState() {
     setSearchResults([]);
+    setSearchCenter(null);
     setHasSearched(false);
-    activeMarkersRef.current.forEach((m) => m.setMap(null));
-    activeMarkersRef.current = [];
+    setLastSearchSource("");
+    setLastResolvedAddress("");
+    restorePreview();
   }
 
-  const hasFilters = searchText.trim() || selectedNeighborhood || selectedType;
+  function clearAll() {
+    setAddressInput("");
+    setSelectedType("");
+    setRadiusMiles(String(DEFAULT_RADIUS_MILES));
+    setDroppedPin(null);
+    clearSearchState();
+  }
+
+  const shownCount = hasSearched ? searchResults.length : previewResults.length;
 
   return (
     <div className="shell">
       <aside className="panel">
         <p className="eyebrow">Boston Food Equity Explorer</p>
-        <h1>Food Access Map</h1>
+        <h1>Radius Search</h1>
+        <p className="lede">
+          Search around an address or a dropped pin. Only locations within your selected radius are rendered.
+        </p>
 
-        {/* Search bar */}
         <div className="search-box">
           <input
             className="search-input"
             type="text"
-            placeholder="Search by name, description..."
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && runSearch()}
+            placeholder="Enter address (example: 29 Austin St, Charlestown)"
+            value={addressInput}
+            onChange={(event) => setAddressInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") runRadiusSearch("address");
+            }}
           />
-          <button className="search-btn" onClick={runSearch} disabled={searching}>
-            {searching ? "..." : "Search"}
+          <button className="search-btn" type="button" disabled={searching} onClick={() => runRadiusSearch("address")}>
+            Search Address
           </button>
         </div>
 
-        {/* Type filter chips */}
+        <div className="pin-status">
+          <span className="control-label">Dropped Pin</span>
+          <div className="pin-coordinates">
+            {droppedPin
+              ? `${droppedPin.lat.toFixed(6)}, ${droppedPin.lng.toFixed(6)}`
+              : "Click map to drop a pin"}
+          </div>
+          <button className="pin-search-btn" type="button" disabled={searching} onClick={() => runRadiusSearch("pin")}>
+            Search From Pin
+          </button>
+        </div>
+
+        <div className="control-grid">
+          <label className="control">
+            <span className="control-label">Radius (miles)</span>
+            <input
+              className="control-input"
+              type="number"
+              min={MIN_RADIUS_MILES}
+              step="0.5"
+              value={radiusMiles}
+              onChange={(event) => setRadiusMiles(event.target.value)}
+            />
+          </label>
+        </div>
+
         <div className="filter-chips">
           {[
             { value: "", label: "All Types" },
             { value: "farmers_market", label: "Farmers Markets" },
             { value: "restaurant", label: "Restaurants" },
-          ].map((opt) => (
+            { value: "grocery_store", label: "Grocery Stores" },
+          ].map((option) => (
             <button
-              key={opt.value}
-              className={`chip ${selectedType === opt.value ? "chip-active" : ""}`}
-              onClick={() => setSelectedType(opt.value)}
+              key={option.value}
+              className={`chip ${selectedType === option.value ? "chip-active" : ""}`}
+              type="button"
+              onClick={() => setSelectedType(option.value)}
             >
-              {opt.label}
+              {option.label}
             </button>
           ))}
         </div>
 
-        {/* Neighborhood dropdown */}
-        <div className="filter-row">
-          <select
-            className="control-input"
-            value={selectedNeighborhood}
-            onChange={(e) => setSelectedNeighborhood(e.target.value)}
-          >
-            <option value="">All Neighborhoods</option>
-            {neighborhoods.map((n) => (
-              <option key={n.name} value={n.name}>{n.name}</option>
-            ))}
-          </select>
-          {hasFilters && (
-            <button className="clear-btn" onClick={clearSearch}>Clear</button>
-          )}
+        <div className="meta-row">
+          <button className="toggle-all" type="button" onClick={clearAll}>
+            Clear Search + Pin
+          </button>
+          <span className="count-pill">{shownCount} shown</span>
         </div>
 
-        {/* Map controls */}
-        <div className="control-grid" style={{ marginTop: "12px" }}>
+        <div className="control-grid">
           <label className="control">
             <span className="control-label">Map Theme</span>
-            <select className="control-input" value={mapTheme} onChange={(e) => setMapTheme(e.target.value)}>
+            <select className="control-input" value={mapTheme} onChange={(event) => setMapTheme(event.target.value)}>
               <option value="civic">Civic Light</option>
               <option value="gray">Muted Gray</option>
               <option value="blueprint">Blueprint</option>
@@ -413,7 +619,7 @@ export default function App() {
           </label>
           <label className="control">
             <span className="control-label">Map Scope</span>
-            <select className="control-input" value={mapScope} onChange={(e) => setMapScope(e.target.value)}>
+            <select className="control-input" value={mapScope} onChange={(event) => setMapScope(event.target.value)}>
               <option value="boston">Boston Only</option>
               <option value="massachusetts">Massachusetts</option>
             </select>
@@ -422,30 +628,43 @@ export default function App() {
 
         <p className={`status ${error ? "status-error" : ""}`}>{error || status}</p>
 
-        {/* Legend */}
+        {(lastSearchSource || lastResolvedAddress || searchCenter) && (
+          <div className="search-meta">
+            {lastSearchSource && <div>Source: {lastSearchSource === "address" ? "Address" : "Pin"}</div>}
+            {lastResolvedAddress && <div>Resolved: {lastResolvedAddress}</div>}
+            {searchCenter && (
+              <div>
+                Center: {searchCenter.lat.toFixed(6)}, {searchCenter.lng.toFixed(6)}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="legend-row">
           <span className="legend-dot" style={{ background: "#F59E0B" }} /> Farmers Market
-          <span className="legend-dot" style={{ background: "#10B981", marginLeft: "12px" }} /> Restaurant
+          <span className="legend-dot" style={{ background: "#10B981", marginLeft: "10px" }} /> Restaurant
+          <span className="legend-dot" style={{ background: "#3B82F6", marginLeft: "10px" }} /> Grocery
         </div>
 
-        {/* Search results list */}
         {hasSearched && (
           <section className="dataset">
-            <h2>Results</h2>
+            <h2>In Radius</h2>
             <p className="dataset-caption">
-              {searching ? "Searching..." : `${searchResults.length} location${searchResults.length !== 1 ? "s" : ""} found`}
+              {searching ? "Searching..." : `${searchResults.length} location(s) in range`}
             </p>
+
             {!searching && searchResults.length === 0 && (
-              <p className="dataset-caption">No results match your filters.</p>
+              <p className="dataset-caption">No locations matched this center + radius.</p>
             )}
-            <div className="dataset-list" role="list">
-              {searchResults.map((item, i) => (
+
+            <div className="dataset-list" role="list" aria-label="Radius search results">
+              {searchResults.map((item, index) => (
                 <div
-                  key={i}
+                  key={`${item.name || "item"}-${index}`}
                   className="dataset-item dataset-item-clickable"
                   role="listitem"
                   onClick={() => {
-                    if (!item.lat || !item.lng || !mapRef.current) return;
+                    if (!mapRef.current || item.lat == null || item.lng == null) return;
                     mapRef.current.panTo({ lat: item.lat, lng: item.lng });
                     mapRef.current.setZoom(15);
                   }}
@@ -455,8 +674,8 @@ export default function App() {
                     style={{ background: PLACE_TYPE_COLORS[item.place_type] || "#6B7280" }}
                   />
                   <div className="result-text">
-                    <span className="dataset-name">{item.name}</span>
-                    <span className="dataset-meta">{item.neighborhood || item.city}</span>
+                    <span className="dataset-name">{item.name || "Unknown"}</span>
+                    <span className="dataset-meta">{item.neighborhood || item.city || "No neighborhood"}</span>
                   </div>
                 </div>
               ))}

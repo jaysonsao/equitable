@@ -1,5 +1,9 @@
 import os
-import google.generativeai as genai
+
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
 
 _model = None
 
@@ -7,6 +11,8 @@ _model = None
 def _get_model():
     global _model
     if _model is None:
+        if genai is None:
+            raise RuntimeError("google-generativeai is not installed")
         api_key = os.environ.get("GEMINI_API_KEY", "")
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY not set")
