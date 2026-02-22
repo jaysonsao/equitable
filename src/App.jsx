@@ -56,6 +56,12 @@ export default function App() {
   const mapTheme = "civic";
   const [mapScope, setMapScope] = useState("boston");
   const [showChoropleth, setShowChoropleth] = useState(true);
+  const [showMbta, setShowMbta] = useState(false);
+  const [mbtaStops, setMbtaStops] = useState([]);
+  const mbtaMarkersRef = useRef([]);
+  const mbtaPolylinesRef = useRef([]);
+  const directionsRendererRef = useRef(null);
+  const mbtaStopsRef = useRef([]);
   const [giniRange, setGiniRange] = useState({ min: 0.3, max: 0.55 });
 
   const [nlQuery, setNlQuery] = useState("");
@@ -184,6 +190,54 @@ export default function App() {
     wrapper.appendChild(typeTag);
     wrapper.appendChild(address);
     if (item.neighborhood) wrapper.appendChild(neighborhood);
+
+    // Get Directions button (only if pin is dropped)
+    const pin = pinMarkerRef.current;
+    if (pin && item.lat != null && item.lng != null) {
+      const dirBtn = document.createElement("button");
+      dirBtn.className = "info-window-search-btn";
+      dirBtn.textContent = "🚇 Get Transit Directions";
+      dirBtn.style.marginTop = "8px";
+      dirBtn.addEventListener("click", () => {
+        const map = mapRef.current;
+        if (!map) return;
+
+        // Clear previous route
+        if (directionsRendererRef.current) {
+          directionsRendererRef.current.setMap(null);
+        }
+        const renderer = new window.google.maps.DirectionsRenderer({
+          suppressMarkers: false,
+          polylineOptions: { strokeColor: "#0b6e4f", strokeWeight: 5 },
+        });
+        renderer.setMap(map);
+        directionsRendererRef.current = renderer;
+
+        const service = new window.google.maps.DirectionsService();
+        const origin = pin.getPosition();
+        service.route(
+          {
+            origin,
+            destination: { lat: item.lat, lng: item.lng },
+            travelMode: window.google.maps.TravelMode.TRANSIT,
+          },
+          (result, status) => {
+            if (status === "OK") {
+              renderer.setDirections(result);
+            } else {
+              alert("Could not find a transit route. Try enabling the Directions API in Google Cloud Console.");
+            }
+          }
+        );
+      });
+      wrapper.appendChild(dirBtn);
+    } else if (!pin) {
+      const hint = document.createElement("div");
+      hint.className = "info-window-muted";
+      hint.style.marginTop = "6px";
+      hint.textContent = "Drop a pin on the map to get transit directions.";
+      wrapper.appendChild(hint);
+    }
 
     return wrapper;
   }, []);
@@ -1058,6 +1112,88 @@ export default function App() {
     setNeighborhoodStatsExpanded(false);
   }, [selectedNeighborhood]);
 
+  // Fetch MBTA stops + route lines, show/hide when toggle changes
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const map = mapRef.current;
+
+    if (!showMbta) {
+      mbtaMarkersRef.current.forEach((m) => m.setMap(null));
+      mbtaPolylinesRef.current.forEach((p) => p.setMap(null));
+      return;
+    }
+
+    if (mbtaStops.length === 0) {
+      // Fetch stops and routes in parallel
+      Promise.all([
+        fetch("/api/mbta-stops").then((r) => r.json()),
+        fetch("/api/mbta-routes").then((r) => r.json()),
+      ]).then(([stops, routes]) => {
+        if (!Array.isArray(stops)) return;
+        setMbtaStops(stops);
+
+        // Draw route polylines
+        if (Array.isArray(routes)) {
+          const polylines = routes.map((route) => {
+            const path = window.google.maps.geometry.encoding.decodePath(route.polyline);
+            return new window.google.maps.Polyline({
+              path,
+              map,
+              strokeColor: route.color,
+              strokeWeight: 3,
+              strokeOpacity: 0.85,
+              zIndex: 5,
+            });
+          });
+          mbtaPolylinesRef.current = polylines;
+        }
+
+        // Draw stop markers with click info
+        const mbtaInfoWindow = new window.google.maps.InfoWindow();
+        const markers = stops.map((stop) => {
+          const primaryColor = stop.colors?.[0] || "#888888";
+          const marker = new window.google.maps.Marker({
+            position: { lat: stop.lat, lng: stop.lng },
+            map,
+            title: stop.name,
+            icon: {
+              path: window.google.maps.SymbolPath.CIRCLE,
+              scale: 6,
+              fillColor: primaryColor,
+              fillOpacity: 1,
+              strokeColor: "#ffffff",
+              strokeWeight: 2,
+            },
+            zIndex: 10,
+          });
+
+          marker.addListener("click", () => {
+            const lines = stop.lines || [];
+            const colors = stop.colors || [];
+            const lineChips = lines.map((line, i) =>
+              `<span style="display:inline-block;background:${colors[i] || "#888"};color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin-right:4px;">${line} Line</span>`
+            ).join("");
+
+            mbtaInfoWindow.setContent(`
+              <div style="font-family:sans-serif;min-width:140px;">
+                <strong style="font-size:13px;">${stop.name}</strong>
+                <div style="margin-top:6px;">${lineChips || "MBTA Stop"}</div>
+                ${stop.municipality ? `<div style="font-size:11px;color:#888;margin-top:4px;">${stop.municipality}</div>` : ""}
+              </div>
+            `);
+            mbtaInfoWindow.open({ map, anchor: marker });
+          });
+
+          return marker;
+        });
+        mbtaMarkersRef.current = markers;
+      }).catch(() => {});
+    } else {
+      mbtaMarkersRef.current.forEach((m) => m.setMap(map));
+      mbtaPolylinesRef.current.forEach((p) => p.setMap(map));
+    }
+  }, [showMbta, mbtaStops]);
+
   const closeNeighborhoodCard = () => {
     setSelectedNeighborhood("");
     setNeighborhoodMetrics(null);
@@ -1277,6 +1413,22 @@ export default function App() {
           >
             {showChoropleth ? t.hidePoverty : t.showPoverty}
           </button>
+          <button
+            className={`choropleth-btn ${showMbta ? "choropleth-on" : ""}`}
+            onClick={() => setShowMbta((v) => !v)}
+          >
+            {showMbta ? "Hide MBTA Stops" : "Show MBTA Stops"}
+          </button>
+          {showMbta && (
+            <div style={{ fontSize: "0.72rem", color: "#6b6560", marginTop: "4px", display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              {[["Red", "#DA291C"], ["Orange", "#ED8B00"], ["Blue", "#003DA5"], ["Green", "#00843D"]].map(([name, color]) => (
+                <span key={name} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                  <span style={{ display: "inline-block", width: 18, height: 3, background: color, borderRadius: 2 }} />
+                  {name}
+                </span>
+              ))}
+            </div>
+          )}
           {showChoropleth && (
             <div className="choropleth-legend">
               <div className="choropleth-bar" />

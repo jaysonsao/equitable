@@ -354,6 +354,88 @@ def gemini_ask():
         return jsonify({"error": str(e)}), 503
 
 
+_mbta_stops_cache = None
+_mbta_routes_cache = None
+
+MBTA_ROUTE_COLORS = {
+    "Red": "#DA291C",
+    "Orange": "#ED8B00",
+    "Blue": "#003DA5",
+    "Green-B": "#00843D",
+    "Green-C": "#00843D",
+    "Green-D": "#00843D",
+    "Green-E": "#00843D",
+    "Mattapan": "#DA291C",
+}
+
+@app.route("/api/mbta-routes")
+def mbta_routes():
+    global _mbta_routes_cache
+    if _mbta_routes_cache is not None:
+        return jsonify(_mbta_routes_cache)
+    try:
+        from urllib.request import Request as URLRequest
+        subway_routes = ["Red", "Orange", "Blue", "Green-B", "Green-C", "Green-D", "Green-E", "Mattapan"]
+        routes = []
+        for route_id in subway_routes:
+            color = MBTA_ROUTE_COLORS.get(route_id, "#888888")
+            url = f"https://api-v3.mbta.com/shapes?filter[route]={route_id}&fields[shape]=polyline"
+            req = URLRequest(url, headers={"Accept": "application/json"})
+            with urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            for item in data.get("data", []):
+                polyline = item.get("attributes", {}).get("polyline")
+                if polyline:
+                    routes.append({"polyline": polyline, "color": color, "route": route_id})
+        _mbta_routes_cache = routes
+        return jsonify(routes)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/api/mbta-stops")
+def mbta_stops():
+    global _mbta_stops_cache
+    if _mbta_stops_cache is not None:
+        return jsonify(_mbta_stops_cache)
+    try:
+        from urllib.request import Request as URLRequest
+        subway_routes = ["Red", "Orange", "Blue", "Green-B", "Green-C", "Green-D", "Green-E", "Mattapan"]
+        stop_map = {}  # stop_id -> stop dict with lines list
+        for route_id in subway_routes:
+            color = MBTA_ROUTE_COLORS.get(route_id, "#888888")
+            line_name = route_id.split("-")[0]  # Green-B -> Green
+            url = f"https://api-v3.mbta.com/stops?filter[route]={route_id}&fields[stop]=name,latitude,longitude,municipality"
+            req = URLRequest(url, headers={"Accept": "application/json"})
+            with urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            for item in data.get("data", []):
+                attrs = item.get("attributes", {})
+                lat = attrs.get("latitude")
+                lng = attrs.get("longitude")
+                if lat is None or lng is None:
+                    continue
+                stop_id = item.get("id")
+                if stop_id not in stop_map:
+                    stop_map[stop_id] = {
+                        "id": stop_id,
+                        "name": attrs.get("name"),
+                        "lat": lat,
+                        "lng": lng,
+                        "municipality": attrs.get("municipality"),
+                        "lines": [],
+                        "colors": [],
+                    }
+                if line_name not in stop_map[stop_id]["lines"]:
+                    stop_map[stop_id]["lines"].append(line_name)
+                    stop_map[stop_id]["colors"].append(color)
+        stops = list(stop_map.values())
+        _mbta_stops_cache = stops
+        return jsonify(stops)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
 @app.route("/api/tts", methods=["POST"])
 def text_to_speech():
     api_key = os.environ.get("ELEVENLABS_API_KEY", "")
