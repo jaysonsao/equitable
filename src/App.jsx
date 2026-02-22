@@ -1,5 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+function SplashScreen({ onDone }) {
+  const [fading, setFading] = useState(false);
+
+  useEffect(() => {
+    const fadeTimer = setTimeout(() => setFading(true), 2200);
+    const doneTimer = setTimeout(() => onDone(), 2800);
+    return () => { clearTimeout(fadeTimer); clearTimeout(doneTimer); };
+  }, [onDone]);
+
+  return (
+    <div className={`splash${fading ? " splash--fade" : ""}`}>
+      <div className="splash-icon">
+        {/* Market cart SVG */}
+        <svg viewBox="0 0 80 72" fill="none" xmlns="http://www.w3.org/2000/svg" className="splash-cart">
+          <rect x="10" y="20" width="52" height="30" rx="4" fill="#ffffff" stroke="#0b6e4f" strokeWidth="2.5"/>
+          <polyline points="4,8 14,8 24,50 56,50 64,24 14,24" fill="none" stroke="#0b6e4f" strokeWidth="2.5" strokeLinejoin="round"/>
+          <circle cx="28" cy="60" r="5" fill="#0b6e4f"/>
+          <circle cx="52" cy="60" r="5" fill="#0b6e4f"/>
+          {/* Map pin inside cart */}
+          <path d="M40 18 C40 18 32 26 32 32 C32 36.4 35.6 40 40 40 C44.4 40 48 36.4 48 32 C48 26 40 18 40 18Z" fill="#F59E0B" stroke="#d97706" strokeWidth="1.5"/>
+          <circle cx="40" cy="32" r="3.5" fill="#ffffff"/>
+        </svg>
+        <p className="splash-title">Boston Food Equity Explorer</p>
+        <p className="splash-sub">Mapping access across neighborhoods</p>
+      </div>
+    </div>
+  );
+}
+
 const BOSTON_CENTER = { lat: 42.3601, lng: -71.0589 };
 const BOSTON_GEOJSON = "/data/boston_neighborhood_boundaries.geojson";
 const COUNTY_COLOR = "#2A9D8F";
@@ -147,6 +176,7 @@ export default function App() {
   const centerMarkerRef = useRef(null);
   const radiusCircleRef = useRef(null);
 
+  const [showSplash, setShowSplash] = useState(true);
   const [status, setStatus] = useState("Loading map...");
   const [error, setError] = useState("");
   const [mapTheme, setMapTheme] = useState("civic");
@@ -531,6 +561,8 @@ export default function App() {
   }
 
   const shownCount = hasSearched ? searchResults.length : previewResults.length;
+
+  if (showSplash) return <SplashScreen onDone={() => setShowSplash(false)} />;
 
   return (
     <div className="shell">

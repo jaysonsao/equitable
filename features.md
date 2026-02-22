@@ -1,8 +1,38 @@
-Features  implemented 
-Google MAP API 
+Features implemented
 
-Gemini Summary 
- for function 
+---
+
+## [2026-02-22 12:53] — Splash Screen Animation
+- Added a fullscreen loading splash screen that displays on app open
+- Light green background (`#d5f0df`) with a market cart + map pin SVG icon
+- Animations: cart drops and bounces in, map pin fades into cart, title and subtitle slide up
+- Auto-dismisses after 2.8s with a fade-out transition into the main app
+- Implemented as a `SplashScreen` React component in `src/App.jsx`
+- Styles added to `src/styles.css`
+
+## [2026-02-22] — Merge dev → main
+- Merged dev branch into main, bringing all dev features into main
+- Resolved conflicts keeping dev versions of `app.py` and `seed.py`
+
+---
+
+## Previously implemented
+
+### Google Maps API
+- Interactive map centered on Boston
+- Neighborhood boundary overlays via GeoJSON
+- Color-coded markers by place type (farmers markets, restaurants)
+
+### Search & Filtering
+- Search bar filters food distributors by name, description, or neighborhood
+- Filter chips for place type and neighborhood selection
+- Results list with location details shown in sidebar
+
+### Gemini AI Summary
+- `POST /api/gemini` endpoint powered by Google Gemini
+- Takes neighborhood name + context (Gini index, nearby markets)
+- Returns a 2–3 sentence food equity summary
+
 The frontend should call:
 
 
