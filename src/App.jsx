@@ -305,7 +305,7 @@ function giniToColor(t) {
 const GOOGLE_MAPS_API_KEY =
   typeof __GOOGLE_MAPS_API__ === "string" ? __GOOGLE_MAPS_API__.trim() : "";
 
-const MIN_RADIUS_MILES = 0.5;
+const MIN_RADIUS_MILES = 0.1;
 const DEFAULT_RADIUS_MILES = 0.5;
 const DEFAULT_LIMIT = 350;
 const PREVIEW_SAMPLE_PCT = 0.1;
@@ -529,6 +529,9 @@ export default function App() {
   const pinMarkerRef = useRef(null);
   const centerMarkerRef = useRef(null);
   const radiusCircleRef = useRef(null);
+  const runAreaSearchAtRef = useRef(async () => {});
+  const openAreaSearchPromptRef = useRef(() => {});
+  const lastFeatureClickTsRef = useRef(0);
 
   const [showSplash, setShowSplash] = useState(true);
   const [status, setStatus] = useState("Loading map...");
@@ -758,6 +761,111 @@ export default function App() {
     }
   }, [clearResultMarkers, clearSearchOverlay, placeMarkers, previewResults]);
 
+  const getFocusedSearchRadiusMiles = useCallback(() => {
+    const parsed = Number.parseFloat(radiusMiles);
+    if (!Number.isFinite(parsed) || parsed < MIN_RADIUS_MILES) {
+      return DEFAULT_RADIUS_MILES;
+    }
+    return parsed;
+  }, [radiusMiles]);
+
+  const runAreaSearchAt = useCallback(async (pin, areaLabel = "this area") => {
+    if (!pin) return;
+
+    const radius = getFocusedSearchRadiusMiles();
+    const payload = {
+      pin,
+      radius_miles: radius,
+      limit: DEFAULT_LIMIT,
+    };
+    if (selectedType) payload.place_type = selectedType;
+
+    setDroppedPin(pin);
+    setSearching(true);
+    setError("");
+    setHasSearched(true);
+    setLastSearchSource("pin");
+    setLastResolvedAddress("");
+
+    try {
+      const response = await fetch("/api/food-distributors/search-radius", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || `Search failed (${response.status})`);
+      }
+
+      const rawResults = Array.isArray(data.results) ? data.results : [];
+      const filteredResults = filterResultsByScope(rawResults);
+      const filteredOut = rawResults.length - filteredResults.length;
+
+      setSearchResults(filteredResults);
+      setSearchCenter(data.search_center || pin);
+      placeMarkers(filteredResults, data.search_center || pin, radius);
+      setStatus(
+        `Found ${filteredResults.length} location(s) near ${areaLabel} (area search: ${radius} miles).${
+          filteredOut > 0 ? ` ${filteredOut} outside current scope hidden.` : ""
+        }`
+      );
+    } catch (err) {
+      setSearchResults([]);
+      setSearchCenter(null);
+      setHasSearched(false);
+      restorePreview();
+      setError(err.message || "Search failed");
+    } finally {
+      setSearching(false);
+    }
+  }, [filterResultsByScope, getFocusedSearchRadiusMiles, placeMarkers, restorePreview, selectedType]);
+
+  const openAreaSearchPrompt = useCallback((latLng, areaLabel = "this area") => {
+    const map = mapRef.current;
+    if (!map || !latLng || !infoWindowRef.current) return;
+
+    const radius = getFocusedSearchRadiusMiles();
+    const wrapper = document.createElement("div");
+    wrapper.className = "info-window";
+
+    const title = document.createElement("strong");
+    title.textContent = areaLabel;
+
+    const hint = document.createElement("div");
+    hint.className = "info-window-muted";
+    hint.textContent = `Run a focused ${radius}-mile search around this point (uses current Radius value).`;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "info-window-search-btn";
+    button.textContent = "Search this area";
+    button.disabled = searching;
+    button.addEventListener("click", () => {
+      runAreaSearchAtRef.current(
+        { lat: latLng.lat(), lng: latLng.lng() },
+        areaLabel
+      );
+      infoWindowRef.current?.close();
+    });
+
+    wrapper.appendChild(title);
+    wrapper.appendChild(hint);
+    wrapper.appendChild(button);
+
+    infoWindowRef.current.setPosition(latLng);
+    infoWindowRef.current.setContent(wrapper);
+    infoWindowRef.current.open(map);
+  }, [getFocusedSearchRadiusMiles, searching]);
+
+  useEffect(() => {
+    runAreaSearchAtRef.current = runAreaSearchAt;
+  }, [runAreaSearchAt]);
+
+  useEffect(() => {
+    openAreaSearchPromptRef.current = openAreaSearchPrompt;
+  }, [openAreaSearchPrompt]);
+
   useEffect(() => {
     applyMapViewportSettings(mapScope, mapTheme, false);
   }, [mapScope, mapTheme, applyMapViewportSettings]);
@@ -832,12 +940,14 @@ export default function App() {
         setTimeout(() => window.google.maps.event.trigger(map, "resize"), 100);
 
         map.data.addListener("click", async (event) => {
+          lastFeatureClickTsRef.current = Date.now();
           const name = getNeighborhoodName(event.feature);
           const nextPin = { lat: event.latLng.lat(), lng: event.latLng.lng() };
           setDroppedPin(nextPin);
           setSelectedNeighborhood(name);
           setMetricsError("");
           setMetricsLoading(true);
+          openAreaSearchPromptRef.current(event.latLng, name);
 
           try {
             const metricsResponse = await fetch(
@@ -857,16 +967,13 @@ export default function App() {
             if (active) setMetricsLoading(false);
           }
 
-          const content = document.createElement("strong");
-          content.textContent = `${name} (pin set)`;
-          infoWindowRef.current.setPosition(event.latLng);
-          infoWindowRef.current.setContent(content);
-          infoWindowRef.current.open(map);
         });
 
         map.addListener("click", (event) => {
+          if (Date.now() - lastFeatureClickTsRef.current < 120) return;
           const nextPin = { lat: event.latLng.lat(), lng: event.latLng.lng() };
           setDroppedPin(nextPin);
+          openAreaSearchPromptRef.current(event.latLng, "Selected area");
         });
 
         setStatus("Loading sampled locations...");
@@ -1170,7 +1277,7 @@ export default function App() {
               className="control-input"
               type="number"
               min={MIN_RADIUS_MILES}
-              step="0.5"
+              step="0.1"
               value={radiusMiles}
               onChange={(event) => setRadiusMiles(event.target.value)}
             />

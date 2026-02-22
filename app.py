@@ -39,10 +39,10 @@ for k, v in dot_env.items():
 
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API", "")
 METERS_PER_MILE = 1609.344
-MIN_RADIUS_MILES = 0.5
+MIN_RADIUS_MILES = 0.1
 MAX_RADIUS_MILES = 50
 DEFAULT_RESULT_LIMIT = 250
-MAX_RESULT_LIMIT = 1000
+MAX_RESULT_LIMIT = 2000
 
 
 def _to_float(value, field_name: str) -> float:
