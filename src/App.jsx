@@ -795,37 +795,43 @@ export default function App() {
     }
   }, []);
 
+  const refreshRafRef = useRef(null);
   const refreshBoundaryStyles = useCallback(() => {
     if (!mapRef.current) return;
-    mapRef.current.data.setStyle((feature) => {
-      const name = getNeighborhoodName(feature);
-      const choropleth = showChoroplethRef.current;
-      const rate = incomeMapRef.current.get(name);
-      const { min, max } = giniRangeRef.current;
+    if (refreshRafRef.current) return; // already scheduled
+    refreshRafRef.current = requestAnimationFrame(() => {
+      refreshRafRef.current = null;
+      if (!mapRef.current) return;
+      mapRef.current.data.setStyle((feature) => {
+        const name = getNeighborhoodName(feature);
+        const choropleth = showChoroplethRef.current;
+        const rate = incomeMapRef.current.get(name);
+        const { min, max } = giniRangeRef.current;
 
-      let fillColor = COUNTY_COLOR;
-      let fillOpacity = 0.2;
+        let fillColor = COUNTY_COLOR;
+        let fillOpacity = 0.2;
 
-      if (choropleth && rate != null) {
-        const t = Math.max(0, Math.min(1, (rate - min) / (max - min)));
-        fillColor = giniToColor(t);
-        fillOpacity = 0.7;
-      }
+        if (choropleth && rate != null) {
+          const t = Math.max(0, Math.min(1, (rate - min) / (max - min)));
+          fillColor = giniToColor(t);
+          fillOpacity = 0.7;
+        }
 
-      const isHovered = hoveredNeighborhoodRef.current === name;
-      if (isHovered) {
-        fillColor = darkenColor(fillColor, 0.14);
-        fillOpacity = Math.min(0.9, fillOpacity + 0.12);
-      }
+        const isHovered = hoveredNeighborhoodRef.current === name;
+        if (isHovered) {
+          fillColor = darkenColor(fillColor, 0.14);
+          fillOpacity = Math.min(0.9, fillOpacity + 0.12);
+        }
 
-      return {
-        clickable: true,
-        fillColor,
-        fillOpacity,
-        strokeColor: isHovered ? "#2f2f2f" : "#555",
-        strokeOpacity: isHovered ? 0.85 : 0.5,
-        strokeWeight: isHovered ? 1.6 : 1,
-      };
+        return {
+          clickable: true,
+          fillColor,
+          fillOpacity,
+          strokeColor: isHovered ? "#2f2f2f" : "#555",
+          strokeOpacity: isHovered ? 0.85 : 0.5,
+          strokeWeight: isHovered ? 1.6 : 1,
+        };
+      });
     });
   }, []);
 
@@ -1145,6 +1151,16 @@ export default function App() {
         infoWindowRef.current = new window.google.maps.InfoWindow();
         window.google.maps.event.trigger(map, "resize");
 
+        // Hide markers while zooming to reduce jank, restore on idle
+        let zoomHideTimer = null;
+        map.addListener("zoom_changed", () => {
+          activeMarkersRef.current.forEach((m) => m.setVisible(false));
+          clearTimeout(zoomHideTimer);
+          zoomHideTimer = setTimeout(() => {
+            activeMarkersRef.current.forEach((m) => m.setVisible(true));
+          }, 150);
+        });
+
         setStatus(t.loadingBoundaries);
         const [response, incomeRes] = await Promise.all([
           fetch(BOSTON_GEOJSON),
@@ -1262,14 +1278,20 @@ export default function App() {
 
         });
 
+        let hoverRafId = null;
         map.data.addListener("mouseover", (event) => {
-          hoveredNeighborhoodRef.current = getNeighborhoodName(event.feature);
-          refreshBoundaryStyles();
+          const name = getNeighborhoodName(event.feature);
+          if (hoveredNeighborhoodRef.current === name) return;
+          hoveredNeighborhoodRef.current = name;
+          if (hoverRafId) cancelAnimationFrame(hoverRafId);
+          hoverRafId = requestAnimationFrame(() => refreshBoundaryStyles());
         });
 
         map.data.addListener("mouseout", () => {
+          if (hoveredNeighborhoodRef.current === "") return;
           hoveredNeighborhoodRef.current = "";
-          refreshBoundaryStyles();
+          if (hoverRafId) cancelAnimationFrame(hoverRafId);
+          hoverRafId = requestAnimationFrame(() => refreshBoundaryStyles());
         });
 
         map.addListener("click", (event) => {
