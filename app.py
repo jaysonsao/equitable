@@ -297,6 +297,20 @@ def gemini_ask():
         return jsonify({"error": str(e)}), 503
 
 
+@app.errorhandler(404)
+def not_found(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Not found"}), 404
+    return e
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Internal server error"}), 500
+    return e
+
+
 @app.route("/", defaults={"req_path": ""})
 @app.route("/<path:req_path>")
 def serve_static(req_path: str):

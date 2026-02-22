@@ -843,10 +843,10 @@ export default function App() {
             const metricsResponse = await fetch(
               `/api/neighborhood-metrics?name=${encodeURIComponent(name)}`
             );
-            const metricsData = await metricsResponse.json();
             if (!metricsResponse.ok) {
-              throw new Error(metricsData?.error || `Neighborhood metrics failed (${metricsResponse.status})`);
+              throw new Error(`Neighborhood metrics failed (${metricsResponse.status})`);
             }
+            const metricsData = await metricsResponse.json();
             if (!active) return;
             setNeighborhoodMetrics(metricsData);
           } catch (err) {
@@ -1049,8 +1049,8 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: nlQuery }),
       });
+      if (!res.ok) throw new Error(`Gemini parse failed (${res.status})`);
       const intent = await res.json();
-      if (!res.ok) throw new Error(intent?.error || "Gemini parse failed");
       setParsedIntent(intent);
       // Apply extracted place_type as the active filter chip
       if (intent.place_type) setSelectedType(intent.place_type);
