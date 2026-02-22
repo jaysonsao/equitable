@@ -42,6 +42,14 @@ const PLACE_TYPE_LABELS = {
   restaurant: "Restaurant",
 };
 
+// Map Gini score t∈[0,1] to a color: light yellow → dark red
+function giniToColor(t) {
+  const r = Math.round(255 + (128 - 255) * t);
+  const g = Math.round(255 + (0 - 255) * t);
+  const b = Math.round(204 + (38 - 204) * t);
+  return `rgb(${r},${g},${b})`;
+}
+
 const GOOGLE_MAPS_API_KEY =
   typeof __GOOGLE_MAPS_API__ === "string" ? __GOOGLE_MAPS_API__.trim() : "";
 
@@ -124,12 +132,17 @@ export default function App() {
   const enabledSetRef = useRef(new Set());
   const bostonBoundsRef = useRef(null);
   const activeMarkersRef = useRef([]);
+  const incomeMapRef = useRef(new Map()); // neighborhood name → gini score
+  const giniRangeRef = useRef({ min: 0.3, max: 0.55 });
+  const showChoroplethRef = useRef(true);
 
   const [status, setStatus] = useState("Loading map...");
   const [error, setError] = useState("");
   const [neighborhoods, setNeighborhoods] = useState([]);
   const [mapTheme, setMapTheme] = useState("civic");
   const [mapScope, setMapScope] = useState("boston");
+  const [showChoropleth, setShowChoropleth] = useState(true);
+  const [giniRange, setGiniRange] = useState({ min: 0.3, max: 0.55 });
 
   // Search state
   const [searchText, setSearchText] = useState("");
@@ -158,13 +171,26 @@ export default function App() {
     mapRef.current.data.setStyle((feature) => {
       const county = getCountyName(feature);
       const visible = enabledSetRef.current.has(county);
+      const choropleth = showChoroplethRef.current;
+      const gini = incomeMapRef.current.get(county);
+      const { min, max } = giniRangeRef.current;
+
+      let fillColor = COUNTY_COLOR;
+      let fillOpacity = visible ? 0.25 : 0;
+
+      if (choropleth && gini != null) {
+        const t = Math.max(0, Math.min(1, (gini - min) / (max - min)));
+        fillColor = giniToColor(t);
+        fillOpacity = visible ? 0.7 : 0;
+      }
+
       return {
         clickable: visible,
-        fillColor: COUNTY_COLOR,
-        fillOpacity: visible ? 0.25 : 0,
-        strokeColor: COUNTY_COLOR,
-        strokeOpacity: visible ? 0.8 : 0,
-        strokeWeight: visible ? 2 : 0,
+        fillColor,
+        fillOpacity,
+        strokeColor: "#555",
+        strokeOpacity: visible ? 0.5 : 0,
+        strokeWeight: visible ? 1 : 0,
       };
     });
   }, []);
@@ -260,8 +286,29 @@ export default function App() {
         infoWindowRef.current = new window.google.maps.InfoWindow();
 
         setStatus("Loading neighborhood boundaries...");
-        const response = await fetch(BOSTON_GEOJSON);
+        const [response, incomeRes] = await Promise.all([
+          fetch(BOSTON_GEOJSON),
+          fetch("/api/neighborhood-stats"),
+        ]);
         if (!response.ok) throw new Error(`Boundary file failed to load (${response.status}).`);
+
+        if (incomeRes.ok) {
+          const incomeData = await incomeRes.json();
+          const map = new Map();
+          incomeData.forEach((d) => {
+            const name = d["name"]?.trim();
+            const rate = parseFloat(d["poverty_rate"]);
+            if (name && !isNaN(rate)) map.set(name, rate);
+          });
+          incomeMapRef.current = map;
+          if (map.size > 0) {
+            const values = [...map.values()];
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            giniRangeRef.current = { min, max };
+            setGiniRange({ min, max });
+          }
+        }
 
         const geoJson = await response.json();
         const features = map.data.addGeoJson(geoJson);
@@ -420,9 +467,34 @@ export default function App() {
           </label>
         </div>
 
+        {/* Choropleth toggle */}
+        <button
+          className={`choropleth-btn ${showChoropleth ? "choropleth-on" : ""}`}
+          onClick={() => {
+            const next = !showChoropleth;
+            setShowChoropleth(next);
+            showChoroplethRef.current = next;
+            refreshStyles();
+          }}
+        >
+          {showChoropleth ? "Hide" : "Show"} Income Inequality Layer
+        </button>
+
         <p className={`status ${error ? "status-error" : ""}`}>{error || status}</p>
 
-        {/* Legend */}
+        {/* Choropleth legend */}
+        {showChoropleth && (
+          <div className="choropleth-legend">
+            <span className="control-label">Poverty Rate by Neighborhood</span>
+            <div className="choropleth-bar" />
+            <div className="choropleth-labels">
+              <span>{(giniRange.min * 100).toFixed(1)}% — Lower Poverty</span>
+              <span>Higher Poverty — {(giniRange.max * 100).toFixed(1)}%</span>
+            </div>
+          </div>
+        )}
+
+        {/* Marker legend */}
         <div className="legend-row">
           <span className="legend-dot" style={{ background: "#F59E0B" }} /> Farmers Market
           <span className="legend-dot" style={{ background: "#10B981", marginLeft: "12px" }} /> Restaurant

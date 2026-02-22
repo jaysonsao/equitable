@@ -429,6 +429,51 @@ h1 {
   min-width: 0;
 }
 
+.choropleth-btn {
+  border: 1px solid var(--edge);
+  background: #fff;
+  border-radius: 9px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #5a5248;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms, color 120ms;
+  width: 100%;
+  text-align: left;
+}
+
+.choropleth-btn:hover {
+  border-color: #800026;
+  color: #800026;
+}
+
+.choropleth-btn.choropleth-on {
+  border-color: #800026;
+  background: linear-gradient(180deg, #fff0f3, #ffe4ea);
+  color: #800026;
+}
+
+.choropleth-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.choropleth-bar {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #ffffcc, #fd8d3c, #800026);
+  border: 1px solid #d0c0a0;
+}
+
+.choropleth-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: #6a6358;
+}
+
 .info-window {
   font-size: 0.85rem;
   line-height: 1.3;

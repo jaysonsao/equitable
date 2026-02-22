@@ -1,4 +1,5 @@
 import os
+import csv
 import json
 from pathlib import Path
 from flask import Flask, send_from_directory, Response, abort, jsonify, request
@@ -68,6 +69,23 @@ def income_inequality():
         return jsonify(mongo.get_income_inequality())
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 503
+
+
+@app.route("/api/neighborhood-stats")
+def neighborhood_stats():
+    csv_path = ROOT / "data" / "boston_neighborhood_socioeconomic_clean.csv"
+    results = []
+    with open(csv_path, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                pop = float(row["total_population"])
+                below_pov = float(row["population_below_poverty"])
+                poverty_rate = round(below_pov / pop, 4) if pop > 0 else 0
+                results.append({"name": row["name"], "poverty_rate": poverty_rate})
+            except (ValueError, KeyError):
+                continue
+    return jsonify(results)
 
 
 @app.route("/api/gemini", methods=["POST"])
