@@ -179,6 +179,7 @@ export default function App() {
   const mapRef = useRef(null);
   const infoWindowRef = useRef(null);
   const bostonBoundsRef = useRef(null);
+  const neighborhoodNamesRef = useRef(new Set());
   const activeMarkersRef = useRef([]);
   const incomeMapRef = useRef(new Map()); // neighborhood name → poverty rate
   const giniRangeRef = useRef({ min: 0.3, max: 0.55 });
@@ -190,7 +191,7 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [status, setStatus] = useState("Loading map...");
   const [error, setError] = useState("");
-  const [mapTheme, setMapTheme] = useState("civic");
+  const mapTheme = "civic";
   const [mapScope, setMapScope] = useState("boston");
   const [showChoropleth, setShowChoropleth] = useState(true);
   const [giniRange, setGiniRange] = useState({ min: 0.3, max: 0.55 });
@@ -308,6 +309,30 @@ export default function App() {
       fillOpacity: 0.15,
     });
   }, [clearSearchOverlay]);
+
+  const filterResultsToBoston = useCallback((results) => {
+    if (!Array.isArray(results)) return [];
+
+    const bounds = bostonBoundsRef.current;
+    const knownNeighborhoods = neighborhoodNamesRef.current;
+
+    return results.filter((item) => {
+      if (item.lat == null || item.lng == null) return false;
+
+      if (bounds) {
+        const inBounds =
+          item.lat <= bounds.north &&
+          item.lat >= bounds.south &&
+          item.lng <= bounds.east &&
+          item.lng >= bounds.west;
+        if (!inBounds) return false;
+      }
+
+      if (!knownNeighborhoods.size) return true;
+      const neighborhood = String(item.neighborhood || "").trim();
+      return neighborhood ? knownNeighborhoods.has(neighborhood) : false;
+    });
+  }, []);
 
   const placeMarkers = useCallback((results, center, radiusInMiles) => {
     const map = mapRef.current;
@@ -436,10 +461,13 @@ export default function App() {
         const geoJson = await response.json();
         map.data.addGeoJson(geoJson);
         const bounds = new window.google.maps.LatLngBounds();
+        const names = new Set();
         map.data.forEach((feature) => {
+          names.add(getNeighborhoodName(feature));
           const geometry = feature.getGeometry();
           if (geometry) extendBoundsFromGeometry(bounds, geometry);
         });
+        neighborhoodNamesRef.current = names;
         if (!bounds.isEmpty()) {
           bostonBoundsRef.current = expandBoundsLiteral(toBoundsLiteral(bounds), 0.02, 0.03);
         }
@@ -494,14 +522,20 @@ export default function App() {
         const previewData = await previewResponse.json();
         if (!active) return;
 
-        setPreviewResults(Array.isArray(previewData) ? previewData : []);
-        if (Array.isArray(previewData) && previewData.length > 0) {
-          placeMarkers(previewData, null, DEFAULT_RADIUS_MILES);
+        const previewRaw = Array.isArray(previewData) ? previewData : [];
+        const previewFiltered = filterResultsToBoston(previewRaw);
+        const filteredOut = previewRaw.length - previewFiltered.length;
+
+        setPreviewResults(previewFiltered);
+        if (previewFiltered.length > 0) {
+          placeMarkers(previewFiltered, null, DEFAULT_RADIUS_MILES);
           setStatus(
-            `Map ready. Showing ${previewData.length} sampled locations (10%). Enter an address or drop a pin.`
+            `Map ready. Showing ${previewFiltered.length} sampled locations (10%).${
+              filteredOut > 0 ? ` ${filteredOut} outside Boston hidden.` : ""
+            } Enter an address or drop a pin.`
           );
         } else {
-          setStatus("Map ready. No preview locations returned.");
+          setStatus("Map ready. No in-Boston preview locations returned.");
         }
       } catch (err) {
         if (!active) return;
@@ -515,6 +549,7 @@ export default function App() {
       active = false;
       clearResultMarkers();
       clearSearchOverlay();
+      neighborhoodNamesRef.current = new Set();
       if (pinMarkerRef.current) {
         pinMarkerRef.current.setMap(null);
         pinMarkerRef.current = null;
@@ -526,6 +561,7 @@ export default function App() {
     clearSearchOverlay,
     mapScope,
     mapTheme,
+    filterResultsToBoston,
     placeMarkers,
     refreshBoundaryStyles,
     showSplash,
@@ -610,16 +646,23 @@ export default function App() {
       if (!response.ok) {
         throw new Error(data?.error || `Search failed (${response.status})`);
       }
+      const rawResults = data.results || [];
+      const filteredResults = filterResultsToBoston(rawResults);
+      const filteredOut = rawResults.length - filteredResults.length;
 
-      setSearchResults(data.results || []);
+      setSearchResults(filteredResults);
       setSearchCenter(data.search_center || null);
       setLastSearchSource(data.search_source || (useAddress ? "address" : "pin"));
       if (data?.geocode?.formatted_address) {
         setLastResolvedAddress(data.geocode.formatted_address);
       }
 
-      placeMarkers(data.results || [], data.search_center || null, parsedRadius);
-      setStatus(`Found ${data.count ?? (data.results || []).length} location(s) within ${parsedRadius} miles.`);
+      placeMarkers(filteredResults, data.search_center || null, parsedRadius);
+      setStatus(
+        `Found ${filteredResults.length} in-Boston location(s) within ${parsedRadius} miles.${
+          filteredOut > 0 ? ` ${filteredOut} outside Boston hidden.` : ""
+        }`
+      );
     } catch (err) {
       setSearchResults([]);
       setSearchCenter(null);
@@ -738,14 +781,6 @@ export default function App() {
         </div>
 
         <div className="control-grid">
-          <label className="control">
-            <span className="control-label">Map Theme</span>
-            <select className="control-input" value={mapTheme} onChange={(event) => setMapTheme(event.target.value)}>
-              <option value="civic">Civic Light</option>
-              <option value="gray">Muted Gray</option>
-              <option value="blueprint">Blueprint</option>
-            </select>
-          </label>
           <label className="control">
             <span className="control-label">Map Scope</span>
             <select className="control-input" value={mapScope} onChange={(event) => setMapScope(event.target.value)}>
