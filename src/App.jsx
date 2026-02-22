@@ -207,7 +207,13 @@ export default function App() {
       minZoom: scope === "massachusetts" ? 7 : 10,
       maxZoom: 17,
     });
-    if (fitToScope) map.fitBounds(scopeBounds, scope === "massachusetts" ? 24 : 40);
+    if (fitToScope) {
+      const padding = scope === "massachusetts" ? 24 : 40;
+      window.google.maps.event.addListenerOnce(map, "idle", () => {
+        map.fitBounds(scopeBounds, padding);
+        window.google.maps.event.trigger(map, "resize");
+      });
+    }
   }, []);
 
   const refreshBoundaryStyles = useCallback(() => {
@@ -346,6 +352,7 @@ export default function App() {
   }, [mapTheme, mapScope, applyMapViewportSettings]);
 
   useEffect(() => {
+    if (showSplash) return;
     let active = true;
 
     async function init() {
@@ -365,6 +372,7 @@ export default function App() {
 
         mapRef.current = map;
         infoWindowRef.current = new window.google.maps.InfoWindow();
+        window.google.maps.event.trigger(map, "resize");
 
         setStatus("Loading neighborhood boundaries...");
         const response = await fetch(BOSTON_GEOJSON);
@@ -382,6 +390,7 @@ export default function App() {
 
         refreshBoundaryStyles();
         applyMapViewportSettings(mapScope, mapTheme, true);
+        setTimeout(() => window.google.maps.event.trigger(map, "resize"), 100);
 
         map.data.addListener("click", (event) => {
           const name = getNeighborhoodName(event.feature);
@@ -442,6 +451,7 @@ export default function App() {
     mapTheme,
     placeMarkers,
     refreshBoundaryStyles,
+    showSplash,
   ]);
 
   useEffect(() => {

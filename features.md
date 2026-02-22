@@ -2,6 +2,12 @@ Features implemented
 
 ---
 
+## [2026-02-22 14:00] — Map Blank/Blur Fix
+- Fixed map rendering blank on first load (required switching theme to trigger repaint)
+- Root cause: map was initializing while splash screen was covering the container (0-size div)
+- Fix: map init effect now waits for splash to dismiss before running (`showSplash` guard)
+- Also deferred `fitBounds` to fire on the map's first `idle` event so tiles are fully painted
+
 ## [2026-02-22 12:53] — Splash Screen Animation
 - Added a fullscreen loading splash screen that displays on app open
 - Light green background (`#d5f0df`) with a market cart + map pin SVG icon
