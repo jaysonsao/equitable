@@ -193,6 +193,10 @@ export default function App() {
   const [searchCenter, setSearchCenter] = useState(null);
   const [lastSearchSource, setLastSearchSource] = useState("");
   const [lastResolvedAddress, setLastResolvedAddress] = useState("");
+  const [selectedNeighborhood, setSelectedNeighborhood] = useState("");
+  const [neighborhoodMetrics, setNeighborhoodMetrics] = useState(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState("");
 
   const applyMapViewportSettings = useCallback((scope, theme, fitToScope = false) => {
     const map = mapRef.current;
@@ -392,10 +396,31 @@ export default function App() {
         applyMapViewportSettings(mapScope, mapTheme, true);
         setTimeout(() => window.google.maps.event.trigger(map, "resize"), 100);
 
-        map.data.addListener("click", (event) => {
+        map.data.addListener("click", async (event) => {
           const name = getNeighborhoodName(event.feature);
           const nextPin = { lat: event.latLng.lat(), lng: event.latLng.lng() };
           setDroppedPin(nextPin);
+          setSelectedNeighborhood(name);
+          setMetricsError("");
+          setMetricsLoading(true);
+
+          try {
+            const metricsResponse = await fetch(
+              `/api/neighborhood-metrics?name=${encodeURIComponent(name)}`
+            );
+            const metricsData = await metricsResponse.json();
+            if (!metricsResponse.ok) {
+              throw new Error(metricsData?.error || `Neighborhood metrics failed (${metricsResponse.status})`);
+            }
+            if (!active) return;
+            setNeighborhoodMetrics(metricsData);
+          } catch (err) {
+            if (!active) return;
+            setNeighborhoodMetrics(null);
+            setMetricsError(err.message || "Failed to load neighborhood metrics.");
+          } finally {
+            if (active) setMetricsLoading(false);
+          }
 
           const content = document.createElement("strong");
           content.textContent = `${name} (pin set)`;
@@ -570,6 +595,16 @@ export default function App() {
     clearSearchState();
   }
 
+  const formatMetric = (value, digits = 2) => {
+    if (value == null || Number.isNaN(value)) return "N/A";
+    return Number(value).toFixed(digits);
+  };
+
+  const neighborhoodGini = neighborhoodMetrics?.income?.avg_gini_for_neighborhood;
+  const citywideGini = neighborhoodMetrics?.income?.avg_gini_citywide;
+  const displayGini = neighborhoodGini;
+  const giniSourceLabel = neighborhoodGini != null ? "neighborhood" : "";
+
   const shownCount = hasSearched ? searchResults.length : previewResults.length;
 
   if (showSplash) return <SplashScreen onDone={() => setShowSplash(false)} />;
@@ -680,6 +715,90 @@ export default function App() {
               </div>
             )}
           </div>
+        )}
+
+        {(selectedNeighborhood || metricsLoading || metricsError) && (
+          <section className="dataset">
+            <h2>Neighborhood Metrics</h2>
+            <p className="dataset-caption">
+              {selectedNeighborhood || "Click a neighborhood on the map"}
+            </p>
+
+            {metricsLoading && <p className="dataset-caption">Loading metrics...</p>}
+            {metricsError && <p className="dataset-caption">{metricsError}</p>}
+
+            {!metricsLoading && neighborhoodMetrics && (
+              <div className="dataset-list" role="list" aria-label="Neighborhood metrics">
+                <div className="dataset-item" role="listitem">
+                  <span className="dataset-name">Population</span>
+                  <span className="dataset-meta">
+                    {neighborhoodMetrics.population != null
+                      ? Number(neighborhoodMetrics.population).toLocaleString()
+                      : "N/A"}
+                  </span>
+                </div>
+
+                <div className="dataset-item" role="listitem">
+                  <span className="dataset-name">Income Inequality (Avg Gini)</span>
+                  <span className="dataset-meta">
+                    {formatMetric(displayGini)}
+                    {giniSourceLabel ? ` (${giniSourceLabel})` : ""}
+                  </span>
+                </div>
+
+                {neighborhoodMetrics.income?.availability === "unavailable" && (
+                  <div className="dataset-item" role="listitem">
+                    <span className="dataset-name">Income Status</span>
+                    <span className="dataset-meta">
+                      {neighborhoodMetrics.income?.availability_reason || "Neighborhood Gini unavailable."}
+                    </span>
+                  </div>
+                )}
+
+                {citywideGini != null && (
+                  <div className="dataset-item" role="listitem">
+                    <span className="dataset-name">Citywide Avg Gini (Reference)</span>
+                    <span className="dataset-meta">{formatMetric(citywideGini)}</span>
+                  </div>
+                )}
+
+                <div className="dataset-item" role="listitem">
+                  <span className="dataset-name">Restaurants</span>
+                  <span className="dataset-meta">
+                    {neighborhoodMetrics.counts?.restaurants ?? 0} | per 1000: {formatMetric(neighborhoodMetrics.per_1000?.restaurants)}
+                  </span>
+                </div>
+
+                <div className="dataset-item" role="listitem">
+                  <span className="dataset-name">Grocery Stores</span>
+                  <span className="dataset-meta">
+                    {neighborhoodMetrics.counts?.grocery_stores ?? 0} | per 1000: {formatMetric(neighborhoodMetrics.per_1000?.grocery_stores)}
+                  </span>
+                </div>
+
+                <div className="dataset-item" role="listitem">
+                  <span className="dataset-name">Farmers Markets</span>
+                  <span className="dataset-meta">
+                    {neighborhoodMetrics.counts?.farmers_markets ?? 0} | per 1000: {formatMetric(neighborhoodMetrics.per_1000?.farmers_markets)}
+                  </span>
+                </div>
+
+                <div className="dataset-item" role="listitem">
+                  <span className="dataset-name">Food Pantries</span>
+                  <span className="dataset-meta">
+                    {neighborhoodMetrics.counts?.food_pantries ?? 0} | per 1000: {formatMetric(neighborhoodMetrics.per_1000?.food_pantries)}
+                  </span>
+                </div>
+
+                <div className="dataset-item" role="listitem">
+                  <span className="dataset-name">Total Access Points</span>
+                  <span className="dataset-meta">
+                    {neighborhoodMetrics.totals?.access_points ?? 0} | per 1000: {formatMetric(neighborhoodMetrics.per_1000?.access_points)}
+                  </span>
+                </div>
+              </div>
+            )}
+          </section>
         )}
 
         <div className="legend-row">

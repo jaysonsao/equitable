@@ -240,6 +240,18 @@ def income_inequality():
         return jsonify({"error": str(e)}), 503
 
 
+@app.route("/api/neighborhood-metrics")
+def neighborhood_metrics():
+    neighborhood = (request.args.get("name") or request.args.get("neighborhood") or "").strip()
+    if not neighborhood:
+        return jsonify({"error": "name (or neighborhood) query parameter is required"}), 400
+
+    try:
+        return jsonify(mongo.get_neighborhood_metrics(neighborhood))
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+
+
 @app.route("/api/gemini", methods=["POST"])
 def gemini_ask():
     body = request.get_json(silent=True) or {}
