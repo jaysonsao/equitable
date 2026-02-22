@@ -64,6 +64,217 @@ const MASSACHUSETTS_BOUNDS = {
   west: -73.50814,
 };
 
+const NEIGHBORHOOD_NAMES = [
+  "Allston","Back Bay","Beacon Hill","Brighton","Charlestown","Chinatown",
+  "Dorchester","Downtown","East Boston","Fenway","Hyde Park","Jamaica Plain",
+  "Mattapan","Mission Hill","North End","Roslindale","Roxbury","South Boston",
+  "South End","West End","West Roxbury","Whittier Street","Longwood",
+  "Harbor Islands","East Boston",
+];
+
+function CompareBar({ label, valueA, valueB, format = (v) => (v ?? 0).toFixed(1) }) {
+  const max = Math.max(valueA || 0, valueB || 0, 0.001);
+  return (
+    <div className="cmp-row">
+      <span className="cmp-row-label">{label}</span>
+      <div className="cmp-bars">
+        <div className="cmp-bar-wrap">
+          <div className="cmp-bar cmp-bar-a" style={{ width: `${((valueA || 0) / max) * 100}%` }} />
+          <span className="cmp-val">{format(valueA)}</span>
+        </div>
+        <div className="cmp-bar-wrap">
+          <div className="cmp-bar cmp-bar-b" style={{ width: `${((valueB || 0) / max) * 100}%` }} />
+          <span className="cmp-val">{format(valueB)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ComparisonDashboard() {
+  const [nameA, setNameA] = useState("");
+  const [nameB, setNameB] = useState("");
+  const [dataA, setDataA] = useState(null);
+  const [dataB, setDataB] = useState(null);
+  const [povMap, setPovMap] = useState(new Map());
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch("/api/neighborhood-stats")
+      .then((r) => r.json())
+      .then((rows) => {
+        const m = new Map();
+        rows.forEach((r) => m.set(r.name, r.poverty_rate));
+        setPovMap(m);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function compare() {
+    const a = nameA.trim();
+    const b = nameB.trim();
+    if (!a || !b) { setError("Enter both neighborhood names."); return; }
+    if (a.toLowerCase() === b.toLowerCase()) { setError("Choose two different neighborhoods."); return; }
+    setLoading(true);
+    setError("");
+    setDataA(null);
+    setDataB(null);
+    try {
+      const [resA, resB] = await Promise.all([
+        fetch(`/api/neighborhood-metrics?name=${encodeURIComponent(a)}`),
+        fetch(`/api/neighborhood-metrics?name=${encodeURIComponent(b)}`),
+      ]);
+      const [mA, mB] = await Promise.all([resA.json(), resB.json()]);
+      if (!resA.ok) throw new Error(mA?.error || `"${a}" not found`);
+      if (!resB.ok) throw new Error(mB?.error || `"${b}" not found`);
+      setDataA({ ...mA, poverty_rate: povMap.get(a) });
+      setDataB({ ...mB, poverty_rate: povMap.get(b) });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const fmt = (v, d = 0) => v != null && !isNaN(v) ? Number(v).toLocaleString(undefined, { maximumFractionDigits: d }) : "N/A";
+  const fmtPct = (v) => v != null ? `${(v * 100).toFixed(1)}%` : "N/A";
+  const fmtDec = (v) => v != null ? Number(v).toFixed(2) : "N/A";
+
+  const FOOD_KEYS = [
+    { key: "restaurants", label: "Restaurants" },
+    { key: "grocery_stores", label: "Grocery Stores" },
+    { key: "farmers_markets", label: "Farmers Markets" },
+    { key: "food_pantries", label: "Food Pantries" },
+  ];
+
+  return (
+    <div className="cmp-panel">
+      <div className="panel-header">
+        <p className="eyebrow">Boston Food Equity Explorer</p>
+        <h1>Compare Neighborhoods</h1>
+        <p className="lede">Enter two neighborhoods to compare food access side by side.</p>
+      </div>
+
+      <div className="panel-section">
+        <div className="cmp-inputs">
+          <div className="cmp-input-wrap">
+            <span className="cmp-badge cmp-badge-a">A</span>
+            <input
+              className="search-input"
+              list="hood-list-a"
+              placeholder="e.g. Roxbury"
+              value={nameA}
+              onChange={(e) => setNameA(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && compare()}
+            />
+            <datalist id="hood-list-a">
+              {NEIGHBORHOOD_NAMES.map((n) => <option key={n} value={n} />)}
+            </datalist>
+          </div>
+          <div className="cmp-input-wrap">
+            <span className="cmp-badge cmp-badge-b">B</span>
+            <input
+              className="search-input"
+              list="hood-list-b"
+              placeholder="e.g. Back Bay"
+              value={nameB}
+              onChange={(e) => setNameB(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && compare()}
+            />
+            <datalist id="hood-list-b">
+              {NEIGHBORHOOD_NAMES.map((n) => <option key={n} value={n} />)}
+            </datalist>
+          </div>
+        </div>
+        <button className="search-btn" style={{ width: "100%" }} onClick={compare} disabled={loading}>
+          {loading ? "Loading…" : "Compare"}
+        </button>
+        {error && <p className="status status-error">{error}</p>}
+      </div>
+
+      {dataA && dataB && (
+        <>
+          {/* Names header */}
+          <div className="cmp-header-row">
+            <span className="cmp-hood-name cmp-hood-a">{dataA.neighborhood || nameA}</span>
+            <span className="cmp-vs">vs</span>
+            <span className="cmp-hood-name cmp-hood-b">{dataB.neighborhood || nameB}</span>
+          </div>
+
+          {/* Overview stats */}
+          <div className="panel-section">
+            <p className="section-label">Overview</p>
+            <table className="cmp-table">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th className="cmp-th-a">{dataA.neighborhood || nameA}</th>
+                  <th className="cmp-th-b">{dataB.neighborhood || nameB}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Population</td>
+                  <td>{fmt(dataA.population)}</td>
+                  <td>{fmt(dataB.population)}</td>
+                </tr>
+                <tr>
+                  <td>Poverty Rate</td>
+                  <td>{fmtPct(dataA.poverty_rate)}</td>
+                  <td>{fmtPct(dataB.poverty_rate)}</td>
+                </tr>
+                <tr>
+                  <td>Avg Gini</td>
+                  <td>{fmtDec(dataA.income?.avg_gini_for_neighborhood)}</td>
+                  <td>{fmtDec(dataB.income?.avg_gini_for_neighborhood)}</td>
+                </tr>
+                <tr>
+                  <td>Total Access Points</td>
+                  <td>{fmt(dataA.totals?.access_points)}</td>
+                  <td>{fmt(dataB.totals?.access_points)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Food counts bar chart */}
+          <div className="panel-section">
+            <p className="section-label">Food Location Counts</p>
+            <div className="cmp-legend">
+              <span className="cmp-swatch cmp-swatch-a" />{dataA.neighborhood || nameA}
+              <span className="cmp-swatch cmp-swatch-b" style={{ marginLeft: "12px" }} />{dataB.neighborhood || nameB}
+            </div>
+            {FOOD_KEYS.map(({ key, label }) => (
+              <CompareBar
+                key={key}
+                label={label}
+                valueA={dataA.counts?.[key] ?? 0}
+                valueB={dataB.counts?.[key] ?? 0}
+                format={(v) => String(v ?? 0)}
+              />
+            ))}
+          </div>
+
+          {/* Per 1,000 bar chart */}
+          <div className="panel-section">
+            <p className="section-label">Per 1,000 Residents</p>
+            {FOOD_KEYS.map(({ key, label }) => (
+              <CompareBar
+                key={key}
+                label={label}
+                valueA={dataA.per_1000?.[key] ?? 0}
+                valueB={dataB.per_1000?.[key] ?? 0}
+                format={(v) => Number(v ?? 0).toFixed(2)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 const PLACE_TYPE_COLORS = {
   farmers_market: "#F59E0B",
   restaurant: "#10B981",
@@ -215,6 +426,7 @@ export default function App() {
   const [neighborhoodMetrics, setNeighborhoodMetrics] = useState(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [metricsError, setMetricsError] = useState("");
+  const [activeTab, setActiveTab] = useState("map");
 
   const applyMapViewportSettings = useCallback((scope, theme, fitToScope = false) => {
     const map = mapRef.current;
@@ -753,6 +965,20 @@ export default function App() {
     <div className="shell">
       <aside className="panel">
 
+        {/* ── Tab bar ── */}
+        <div className="tab-bar">
+          <button
+            className={`tab ${activeTab === "map" ? "tab-active" : ""}`}
+            onClick={() => setActiveTab("map")}
+          >Map Search</button>
+          <button
+            className={`tab ${activeTab === "compare" ? "tab-active" : ""}`}
+            onClick={() => setActiveTab("compare")}
+          >Compare</button>
+        </div>
+
+        {activeTab === "compare" ? <ComparisonDashboard /> : <>
+
         {/* ── Header ── */}
         <div className="panel-header">
           <p className="eyebrow">Boston Food Equity Explorer</p>
@@ -984,6 +1210,7 @@ export default function App() {
             </div>
           </section>
         )}
+        </>}
       </aside>
 
       <main className="map-wrap">
