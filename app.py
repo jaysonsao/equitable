@@ -333,6 +333,11 @@ def gemini_parse_search():
         return jsonify(result)
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        msg = str(e)
+        if "429" in msg or "quota" in msg.lower() or "exhausted" in msg.lower():
+            return jsonify({"error": "Gemini API rate limit reached. Please try again tomorrow or upgrade your API plan."}), 429
+        return jsonify({"error": f"Gemini error: {msg}"}), 503
 
 
 @app.route("/api/gemini", methods=["POST"])

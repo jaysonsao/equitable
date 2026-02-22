@@ -967,7 +967,10 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: nlQuery }),
       });
-      if (!res.ok) throw new Error(`Gemini parse failed (${res.status})`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Gemini parse failed (${res.status})`);
+      }
       const intent = await res.json();
       setParsedIntent(intent);
       // Apply extracted place_type as the active filter chip
