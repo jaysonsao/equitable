@@ -22,7 +22,7 @@ function SplashScreen({ onDone }) {
           <path d="M40 18 C40 18 32 26 32 32 C32 36.4 35.6 40 40 40 C44.4 40 48 36.4 48 32 C48 26 40 18 40 18Z" fill="#F59E0B" stroke="#d97706" strokeWidth="1.5"/>
           <circle cx="40" cy="32" r="3.5" fill="#ffffff"/>
         </svg>
-        <p className="splash-title">Boston Food Equity Explorer</p>
+        <p className="splash-title">Boston Food  Mapping System</p>
         <p className="splash-sub">Mapping access across neighborhoods</p>
       </div>
     </div>
@@ -68,6 +68,7 @@ const PLACE_TYPE_COLORS = {
   farmers_market: "#F59E0B",
   restaurant: "#10B981",
   grocery_store: "#3B82F6",
+  food_pantry: "#1a1917",
 };
 
 const PLACE_TYPE_LABELS = {
@@ -429,6 +430,8 @@ export default function App() {
           mapTypeControl: false,
           streetViewControl: false,
           styles: getMapStyles(mapTheme),
+          gestureHandling: "greedy",
+          isFractionalZoomEnabled: true,
         });
 
         mapRef.current = map;
@@ -749,67 +752,75 @@ export default function App() {
   return (
     <div className="shell">
       <aside className="panel">
-        <p className="eyebrow">Boston Food Equity Explorer</p>
-        <h1>Smart Search</h1>
-        <p className="lede">
-          Ask in plain language — e.g. "grocery stores in Roxbury" or "food pantries near Jamaica Plain".
-        </p>
 
-        <div className="nl-search-box">
-          <input
-            className="search-input"
-            type="text"
-            placeholder="e.g. grocery stores in Roxbury, farmers market near Downtown"
-            value={nlQuery}
-            onChange={(e) => setNlQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") runNlSearch(); }}
-          />
-          <button
-            className="search-btn"
-            type="button"
-            disabled={nlSearching || searching}
-            onClick={runNlSearch}
-          >
-            {nlSearching ? "Thinking…" : "Search"}
-          </button>
+        {/* ── Header ── */}
+        <div className="panel-header">
+          <p className="eyebrow">Boston Food Equity Explorer</p>
+          <h1>Smart Search</h1>
+          <p className="lede">Ask in plain language — "grocery stores in Roxbury" or "food pantry near Jamaica Plain".</p>
         </div>
 
-        {nlSearching && <p className="nl-thinking">Interpreting your query with Gemini AI…</p>}
-
-        {parsedIntent && (
-          <div className="parsed-chips">
-            {parsedIntent.place_type && (
-              <span className="parsed-chip">
-                {PLACE_TYPE_LABELS[parsedIntent.place_type] ?? parsedIntent.place_type}
-              </span>
-            )}
-            {parsedIntent.neighborhood && (
-              <span className="parsed-chip">{parsedIntent.neighborhood}</span>
-            )}
-            {parsedIntent.address && (
-              <span className="parsed-chip">{parsedIntent.address}</span>
-            )}
-            {!parsedIntent.place_type && !parsedIntent.neighborhood && !parsedIntent.address && (
-              <span className="parsed-chip parsed-chip-warn">No location detected — using pin</span>
-            )}
+        {/* ── Search ── */}
+        <div className="panel-section">
+          <div className="nl-search-box">
+            <input
+              className="search-input"
+              type="text"
+              placeholder="e.g. grocery stores in Roxbury…"
+              value={nlQuery}
+              onChange={(e) => setNlQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") runNlSearch(); }}
+            />
+            <button
+              className="search-btn"
+              type="button"
+              disabled={nlSearching || searching}
+              onClick={runNlSearch}
+            >
+              {nlSearching ? "…" : "Search"}
+            </button>
           </div>
-        )}
 
-        <div className="pin-status">
-          <span className="control-label">Dropped Pin <span className="control-label-soft">(fallback when no location found)</span></span>
-          <div className="pin-coordinates">
-            {droppedPin
-              ? `${droppedPin.lat.toFixed(6)}, ${droppedPin.lng.toFixed(6)}`
-              : "Click map to drop a pin"}
-          </div>
-          <button className="pin-search-btn" type="button" disabled={searching} onClick={() => runRadiusSearch("pin")}>
-            Search From Pin
-          </button>
+          {nlSearching && <p className="nl-thinking">Interpreting with Gemini AI…</p>}
+
+          {parsedIntent && (
+            <div className="parsed-chips">
+              {parsedIntent.place_type && (
+                <span className="parsed-chip">{PLACE_TYPE_LABELS[parsedIntent.place_type] ?? parsedIntent.place_type}</span>
+              )}
+              {parsedIntent.neighborhood && (
+                <span className="parsed-chip">{parsedIntent.neighborhood}</span>
+              )}
+              {parsedIntent.address && (
+                <span className="parsed-chip">{parsedIntent.address}</span>
+              )}
+              {!parsedIntent.place_type && !parsedIntent.neighborhood && !parsedIntent.address && (
+                <span className="parsed-chip parsed-chip-warn">No location found — using pin</span>
+              )}
+            </div>
+          )}
+
+          {(lastSearchSource || lastResolvedAddress) && (
+            <div className="search-meta">
+              {lastResolvedAddress && <div>Resolved: {lastResolvedAddress}</div>}
+              {searchCenter && <div>Center: {searchCenter.lat.toFixed(5)}, {searchCenter.lng.toFixed(5)}</div>}
+            </div>
+          )}
         </div>
 
-        <div className="control-grid">
-          <label className="control">
-            <span className="control-label">Radius (miles)</span>
+        {/* ── Pin + Radius ── */}
+        <div className="panel-section">
+          <p className="section-label">Dropped Pin</p>
+          <div className="pin-row">
+            <span className={`pin-coords${droppedPin ? "" : " pin-coords-empty"}`}>
+              {droppedPin ? `${droppedPin.lat.toFixed(5)}, ${droppedPin.lng.toFixed(5)}` : "Click map to drop a pin"}
+            </span>
+            <button className="pin-search-btn" type="button" disabled={searching} onClick={() => runRadiusSearch("pin")}>
+              Search Pin
+            </button>
+          </div>
+          <div className="radius-row">
+            <span className="radius-label">Radius (miles)</span>
             <input
               className="control-input"
               type="number"
@@ -818,172 +829,124 @@ export default function App() {
               value={radiusMiles}
               onChange={(event) => setRadiusMiles(event.target.value)}
             />
-          </label>
+          </div>
         </div>
 
-        <div className="filter-chips">
-          {[
-            { value: "", label: "All Types" },
-            { value: "farmers_market", label: "Farmers Markets" },
-            { value: "restaurant", label: "Restaurants" },
-            { value: "grocery_store", label: "Grocery Stores" },
-          ].map((option) => (
-            <button
-              key={option.value}
-              className={`chip ${selectedType === option.value ? "chip-active" : ""}`}
-              type="button"
-              onClick={() => setSelectedType(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
+        {/* ── Filters ── */}
+        <div className="panel-section">
+          <div className="filter-chips">
+            {[
+              { value: "", label: "All" },
+              { value: "farmers_market", label: "Farmers Markets" },
+              { value: "restaurant", label: "Restaurants" },
+              { value: "grocery_store", label: "Grocery Stores" },
+              { value: "food_pantry", label: "Food Pantries" },
+            ].map((option) => (
+              <button
+                key={option.value}
+                className={`chip ${selectedType === option.value ? "chip-active" : ""}`}
+                type="button"
+                onClick={() => setSelectedType(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <div className="meta-row">
+            <button className="toggle-all" type="button" onClick={clearAll}>Clear all</button>
+            <span className="count-pill">{shownCount} shown</span>
+          </div>
         </div>
 
-        <div className="meta-row">
-          <button className="toggle-all" type="button" onClick={clearAll}>
-            Clear Search + Pin
-          </button>
-          <span className="count-pill">{shownCount} shown</span>
-        </div>
-
-        <div className="control-grid">
-          <label className="control">
-            <span className="control-label">Map Scope</span>
-            <select className="control-input" value={mapScope} onChange={(event) => setMapScope(event.target.value)}>
-              <option value="boston">Boston Only</option>
+        {/* ── Map options ── */}
+        <div className="panel-section">
+          <div className="control-row">
+            <span className="control-row-label">Map scope</span>
+            <select className="control-input" value={mapScope} onChange={(e) => setMapScope(e.target.value)}>
+              <option value="boston">Boston</option>
               <option value="massachusetts">Massachusetts</option>
             </select>
-          </label>
+          </div>
+          <button
+            className={`choropleth-btn ${showChoropleth ? "choropleth-on" : ""}`}
+            onClick={() => {
+              const next = !showChoropleth;
+              setShowChoropleth(next);
+              showChoroplethRef.current = next;
+              refreshBoundaryStyles();
+            }}
+          >
+            {showChoropleth ? "Hide" : "Show"} Poverty Rate Layer
+          </button>
+          {showChoropleth && (
+            <div className="choropleth-legend">
+              <div className="choropleth-bar" />
+              <div className="choropleth-labels">
+                <span>{(giniRange.min * 100).toFixed(1)}% — Lower</span>
+                <span>Higher — {(giniRange.max * 100).toFixed(1)}%</span>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Choropleth toggle */}
-        <button
-          className={`choropleth-btn ${showChoropleth ? "choropleth-on" : ""}`}
-          onClick={() => {
-            const next = !showChoropleth;
-            setShowChoropleth(next);
-            showChoroplethRef.current = next;
-            refreshBoundaryStyles();
-          }}
-        >
-          {showChoropleth ? "Hide" : "Show"} Income Inequality Layer
-        </button>
-
+        {/* ── Status ── */}
         <p className={`status ${error ? "status-error" : ""}`}>{error || status}</p>
 
-        {/* Choropleth legend */}
-        {showChoropleth && (
-          <div className="choropleth-legend">
-            <span className="control-label">Poverty Rate by Neighborhood</span>
-            <div className="choropleth-bar" />
-            <div className="choropleth-labels">
-              <span>{(giniRange.min * 100).toFixed(1)}% — Lower Poverty</span>
-              <span>Higher Poverty — {(giniRange.max * 100).toFixed(1)}%</span>
-            </div>
+        {/* ── Legend ── */}
+        <div className="panel-section">
+          <div className="legend-row">
+            <span className="legend-dot" style={{ background: "#F59E0B" }} /> Farmers Market
+            <span className="legend-dot" style={{ background: "#10B981" }} /> Restaurant
+            <span className="legend-dot" style={{ background: "#3B82F6" }} /> Grocery
+            <span className="legend-dot" style={{ background: "#1a1917" }} /> Food Pantry
           </div>
-        )}
+        </div>
 
-        {(lastSearchSource || lastResolvedAddress || searchCenter) && (
-          <div className="search-meta">
-            {lastSearchSource && <div>Source: {lastSearchSource === "address" ? "Address" : "Pin"}</div>}
-            {lastResolvedAddress && <div>Resolved: {lastResolvedAddress}</div>}
-            {searchCenter && (
-              <div>
-                Center: {searchCenter.lat.toFixed(6)}, {searchCenter.lng.toFixed(6)}
-              </div>
-            )}
-          </div>
-        )}
-
+        {/* ── Neighborhood Metrics ── */}
         {(selectedNeighborhood || metricsLoading || metricsError) && (
-          <section className="dataset">
-            <h2>Neighborhood Metrics</h2>
-            <p className="dataset-caption">
-              {selectedNeighborhood || "Click a neighborhood on the map"}
-            </p>
-
-            {metricsLoading && <p className="dataset-caption">Loading metrics...</p>}
-            {metricsError && <p className="dataset-caption">{metricsError}</p>}
-
-            {!metricsLoading && neighborhoodMetrics && (
-              <div className="dataset-list" role="list" aria-label="Neighborhood metrics">
-                <div className="dataset-item" role="listitem">
-                  <span className="dataset-name">Population</span>
-                  <span className="dataset-meta">
-                    {neighborhoodMetrics.population != null
-                      ? Number(neighborhoodMetrics.population).toLocaleString()
-                      : "N/A"}
-                  </span>
-                </div>
-
-                <div className="dataset-item" role="listitem">
-                  <span className="dataset-name">Income Inequality (Avg Gini)</span>
-                  <span className="dataset-meta">
-                    {formatMetric(displayGini)}
-                    {giniSourceLabel ? ` (${giniSourceLabel})` : ""}
-                  </span>
-                </div>
-
-                {neighborhoodMetrics.income?.availability === "unavailable" && (
+          <div className="panel-section">
+            <section className="dataset">
+              <h2>{selectedNeighborhood || "Neighborhood Metrics"}</h2>
+              {metricsLoading && <p className="dataset-caption">Loading…</p>}
+              {metricsError && <p className="dataset-caption">{metricsError}</p>}
+              {!metricsLoading && neighborhoodMetrics && (
+                <div className="dataset-list" role="list">
                   <div className="dataset-item" role="listitem">
-                    <span className="dataset-name">Income Status</span>
+                    <span className="dataset-name">Population</span>
                     <span className="dataset-meta">
-                      {neighborhoodMetrics.income?.availability_reason || "Neighborhood Gini unavailable."}
+                      {neighborhoodMetrics.population != null ? Number(neighborhoodMetrics.population).toLocaleString() : "N/A"}
                     </span>
                   </div>
-                )}
-
-                {citywideGini != null && (
                   <div className="dataset-item" role="listitem">
-                    <span className="dataset-name">Citywide Avg Gini (Reference)</span>
-                    <span className="dataset-meta">{formatMetric(citywideGini)}</span>
+                    <span className="dataset-name">Avg Gini Index</span>
+                    <span className="dataset-meta">{formatMetric(displayGini)}{giniSourceLabel ? ` (${giniSourceLabel})` : ""}</span>
                   </div>
-                )}
-
-                <div className="dataset-item" role="listitem">
-                  <span className="dataset-name">Restaurants</span>
-                  <span className="dataset-meta">
-                    {neighborhoodMetrics.counts?.restaurants ?? 0} | per 1000: {formatMetric(neighborhoodMetrics.per_1000?.restaurants)}
-                  </span>
+                  {citywideGini != null && (
+                    <div className="dataset-item" role="listitem">
+                      <span className="dataset-name">Citywide Avg Gini</span>
+                      <span className="dataset-meta">{formatMetric(citywideGini)}</span>
+                    </div>
+                  )}
+                  {[
+                    ["Restaurants", "restaurants"],
+                    ["Grocery Stores", "grocery_stores"],
+                    ["Farmers Markets", "farmers_markets"],
+                    ["Food Pantries", "food_pantries"],
+                    ["Total Access Points", "access_points"],
+                  ].map(([label, key]) => (
+                    <div className="dataset-item" role="listitem" key={key}>
+                      <span className="dataset-name">{label}</span>
+                      <span className="dataset-meta">
+                        {neighborhoodMetrics.counts?.[key] ?? neighborhoodMetrics.totals?.[key] ?? 0}
+                        {" · "}per 1k: {formatMetric(neighborhoodMetrics.per_1000?.[key])}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-
-                <div className="dataset-item" role="listitem">
-                  <span className="dataset-name">Grocery Stores</span>
-                  <span className="dataset-meta">
-                    {neighborhoodMetrics.counts?.grocery_stores ?? 0} | per 1000: {formatMetric(neighborhoodMetrics.per_1000?.grocery_stores)}
-                  </span>
-                </div>
-
-                <div className="dataset-item" role="listitem">
-                  <span className="dataset-name">Farmers Markets</span>
-                  <span className="dataset-meta">
-                    {neighborhoodMetrics.counts?.farmers_markets ?? 0} | per 1000: {formatMetric(neighborhoodMetrics.per_1000?.farmers_markets)}
-                  </span>
-                </div>
-
-                <div className="dataset-item" role="listitem">
-                  <span className="dataset-name">Food Pantries</span>
-                  <span className="dataset-meta">
-                    {neighborhoodMetrics.counts?.food_pantries ?? 0} | per 1000: {formatMetric(neighborhoodMetrics.per_1000?.food_pantries)}
-                  </span>
-                </div>
-
-                <div className="dataset-item" role="listitem">
-                  <span className="dataset-name">Total Access Points</span>
-                  <span className="dataset-meta">
-                    {neighborhoodMetrics.totals?.access_points ?? 0} | per 1000: {formatMetric(neighborhoodMetrics.per_1000?.access_points)}
-                  </span>
-                </div>
-              </div>
-            )}
-          </section>
+              )}
+            </section>
+          </div>
         )}
-
-        <div className="legend-row">
-          <span className="legend-dot" style={{ background: "#F59E0B" }} /> Farmers Market
-          <span className="legend-dot" style={{ background: "#10B981", marginLeft: "10px" }} /> Restaurant
-          <span className="legend-dot" style={{ background: "#3B82F6", marginLeft: "10px" }} /> Grocery
-        </div>
 
         {hasSearched && (
           <section className="dataset">

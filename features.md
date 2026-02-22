@@ -2,6 +2,34 @@ Features implemented
 
 ---
 
+## [2026-02-22] — Smooth Map Zoom
+- Enabled fractional zoom (`isFractionalZoomEnabled: true`) so zoom interpolates fluidly between levels instead of snapping
+- Added `gestureHandling: "greedy"` so scroll/single-finger gestures respond immediately without modifier keys
+
+## [2026-02-22] — Sidebar Redesign (Flat UI)
+- Replaced floating card layout with clean section-divided panel (`border-bottom` dividers, no gradients)
+- New CSS variables: `--bg`, `--paper`, `--ink`, `--ink-soft`, `--edge`, `--accent`, `--accent-light`
+- All buttons flat solid color; only the choropleth gradient bar retains a gradient
+- Sidebar width increased 15% → 414px
+- Reorganized into sections: Header · Search · Pin+Radius · Filters · Map Options · Status · Legend · Neighborhood Metrics
+
+## [2026-02-22] — Food Pantry Legend Dot
+- Added black (`#1a1917`) dot for Food Pantry to the map legend row
+- Added `food_pantry` to `PLACE_TYPE_COLORS` so markers render in black
+
+## [2026-02-22] — Gemini Natural Language Search
+- Replaced address-only search bar with a free-text NL input ("grocery stores in Roxbury")
+- New `POST /api/gemini/parse-search` endpoint calls Gemini to extract `place_type`, `neighborhood`, and `address` from the query
+- `parse_search_query()` added to `services/gemini.py` — prompts Gemini for JSON-only response, strips markdown fences, validates place type, falls back gracefully on parse error
+- Frontend shows "Interpreting with Gemini AI…" while parsing, then renders parsed chips (e.g. "Grocery Store · Roxbury")
+- Radius search fires automatically using extracted address or neighborhood + geocoding
+- `clearAll()` resets NL query and parsed chips
+
+## [2026-02-22] — Neighborhood Metrics Panel
+- Clicking any neighborhood boundary on the map loads metrics from `/api/neighborhood-metrics?name=...`
+- Panel shows: Population, Avg Gini Index, Citywide Avg Gini, counts + per-1k rates for Restaurants / Grocery Stores / Farmers Markets / Food Pantries / Total Access Points
+- Metrics panel only renders when a neighborhood is selected (or loading/error state)
+
 ## [2026-02-22 14:00] — Map Blank/Blur Fix
 - Fixed map rendering blank on first load (required switching theme to trigger repaint)
 - Root cause: map was initializing while splash screen was covering the container (0-size div)
