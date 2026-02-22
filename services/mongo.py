@@ -115,8 +115,12 @@ def get_db():
     return _db
 
 
-def _build_text_filters(query, place_type=None, neighborhood=None, search=None):
-    if place_type:
+def _build_text_filters(query, place_type=None, place_types=None, neighborhood=None, search=None):
+    if place_types:
+        valid_types = [str(item).strip() for item in place_types if str(item).strip()]
+        if valid_types:
+            query["place_type"] = {"$in": valid_types}
+    elif place_type:
         query["place_type"] = place_type
     if neighborhood:
         query["neighborhood_name"] = {"$regex": neighborhood, "$options": "i"}
@@ -147,10 +151,16 @@ def _serialize_doc(doc):
     }
 
 
-def get_food_distributors(place_type=None, neighborhood=None, search=None, sample_pct=None, limit=None):
+def get_food_distributors(place_type=None, place_types=None, neighborhood=None, search=None, sample_pct=None, limit=None):
     db = get_db()
     collection = db["food-distributors"]
-    query = _build_text_filters({}, place_type=place_type, neighborhood=neighborhood, search=search)
+    query = _build_text_filters(
+        {},
+        place_type=place_type,
+        place_types=place_types,
+        neighborhood=neighborhood,
+        search=search,
+    )
     docs = None
 
     if sample_pct is not None:
@@ -185,6 +195,7 @@ def search_food_distributors_by_radius(
     radius_miles,
     limit=250,
     place_type=None,
+    place_types=None,
     neighborhood=None,
     search=None,
 ):
@@ -201,6 +212,7 @@ def search_food_distributors_by_radius(
             }
         },
         place_type=place_type,
+        place_types=place_types,
         neighborhood=neighborhood,
         search=search,
     )

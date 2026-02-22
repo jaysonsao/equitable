@@ -59,6 +59,16 @@ def _to_int(value, field_name: str) -> int:
         raise ValueError(f"Invalid {field_name}: expected integer") from exc
 
 
+def _parse_place_types(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        items = value
+    else:
+        items = str(value).split(",")
+    return [str(item).strip() for item in items if str(item).strip()]
+
+
 def _extract_coordinates(payload: dict):
     if payload.get("lat") is not None and payload.get("lng") is not None:
         return payload.get("lat"), payload.get("lng")
@@ -124,6 +134,7 @@ def farmers_markets():
 def food_distributors():
     try:
         place_type = request.args.get("place_type")
+        place_types = _parse_place_types(request.args.get("place_types"))
         neighborhood = request.args.get("neighborhood")
         search = request.args.get("search")
         sample_pct = request.args.get("sample_pct")
@@ -137,6 +148,7 @@ def food_distributors():
         return jsonify(
             mongo.get_food_distributors(
                 place_type=place_type,
+                place_types=place_types,
                 neighborhood=neighborhood,
                 search=search,
                 sample_pct=sample_pct_value,
@@ -199,6 +211,8 @@ def food_distributors_search_radius():
         return jsonify({"error": "Invalid lng: must be between -180 and 180"}), 400
 
     place_type = request.args.get("place_type") if request.method == "GET" else payload.get("place_type")
+    place_types_raw = request.args.get("place_types") if request.method == "GET" else payload.get("place_types")
+    place_types = _parse_place_types(place_types_raw)
     neighborhood = request.args.get("neighborhood") if request.method == "GET" else payload.get("neighborhood")
     search = request.args.get("search") if request.method == "GET" else payload.get("search")
 
@@ -209,6 +223,7 @@ def food_distributors_search_radius():
             radius_miles=radius_miles,
             limit=limit,
             place_type=place_type,
+            place_types=place_types,
             neighborhood=neighborhood,
             search=search,
         )

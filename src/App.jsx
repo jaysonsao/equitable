@@ -204,6 +204,15 @@ function isExcludedNeighborhoodForSearch(value) {
   return EXCLUDED_SEARCH_NEIGHBORHOODS.has(normalizeNeighborhood(value));
 }
 
+function normalizePlaceTypesInput(value) {
+  if (value == null) return [];
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  const text = String(value).trim();
+  return text ? [text] : [];
+}
+
 function CompareBar({ label, valueA, valueB, format = (v) => (v ?? 0).toFixed(1) }) {
   const max = Math.max(valueA || 0, valueB || 0, 0.001);
   return (
@@ -463,6 +472,7 @@ const DEFAULT_RADIUS_MILES = 0.5;
 const DEFAULT_LIMIT = 350;
 const PREVIEW_SAMPLE_PCT = 0.1;
 const METERS_PER_MILE = 1609.344;
+const AREA_PROMPT_PIN_PEEK_OFFSET_Y = -18;
 
 function getNeighborhoodName(feature) {
   const name = feature.getProperty("name");
@@ -686,6 +696,9 @@ export default function App() {
   const runAreaSearchAtRef = useRef(async () => {});
   const openAreaSearchPromptRef = useRef(() => {});
   const lastFeatureClickTsRef = useRef(0);
+  const previewResultsScopeRef = useRef([]);
+  const searchResultsScopeRef = useRef([]);
+  const lastSearchRadiusRef = useRef(DEFAULT_RADIUS_MILES);
 
   const [showSplash, setShowSplash] = useState(true);
   const [lang, setLang] = useState("en");
@@ -701,7 +714,7 @@ export default function App() {
   const [parsedIntent, setParsedIntent] = useState(null);
   const [nlSearching, setNlSearching] = useState(false);
   const [addressInput, setAddressInput] = useState("");
-  const [selectedType, setSelectedType] = useState("");
+  const [selectedTypes, setSelectedTypes] = useState([]);
   const [radiusMiles, setRadiusMiles] = useState(String(DEFAULT_RADIUS_MILES));
   const [droppedPin, setDroppedPin] = useState(null);
   const [previewResults, setPreviewResults] = useState([]);
@@ -856,6 +869,15 @@ export default function App() {
     });
   }, [mapScope]);
 
+  const applyPlaceTypeFilter = useCallback((results, activePlaceTypes = selectedTypes) => {
+    if (!Array.isArray(results)) return [];
+    const normalized = normalizePlaceTypesInput(activePlaceTypes);
+    if (!normalized.length) return results;
+
+    const allowed = new Set(normalized);
+    return results.filter((item) => allowed.has(item.place_type));
+  }, [selectedTypes]);
+
   const placeMarkers = useCallback((results, center, radiusInMiles) => {
     const map = mapRef.current;
     if (!map) return;
@@ -896,6 +918,7 @@ export default function App() {
         wrapper.appendChild(address);
         if (item.neighborhood) wrapper.appendChild(neighborhood);
 
+        infoWindowRef.current.setOptions({ pixelOffset: new window.google.maps.Size(0, 0) });
         infoWindowRef.current.setContent(wrapper);
         infoWindowRef.current.open({ map, anchor: marker });
       });
@@ -938,12 +961,17 @@ export default function App() {
     if (!pin) return;
 
     const radius = getFocusedSearchRadiusMiles();
+    const activePlaceTypes = normalizePlaceTypesInput(selectedTypes);
     const payload = {
       pin,
       radius_miles: radius,
       limit: DEFAULT_LIMIT,
     };
-    if (selectedType) payload.place_type = selectedType;
+    if (activePlaceTypes.length === 1) {
+      payload.place_type = activePlaceTypes[0];
+    } else if (activePlaceTypes.length > 1) {
+      payload.place_types = activePlaceTypes;
+    }
 
     setDroppedPin(pin);
     setSearching(true);
@@ -964,11 +992,14 @@ export default function App() {
       }
 
       const rawResults = Array.isArray(data.results) ? data.results : [];
-      const filteredResults = filterResultsByScope(rawResults);
+      const scopeFilteredResults = filterResultsByScope(rawResults);
+      const filteredResults = applyPlaceTypeFilter(scopeFilteredResults, activePlaceTypes);
       const filteredOut = rawResults.length - filteredResults.length;
 
+      searchResultsScopeRef.current = scopeFilteredResults;
       setSearchResults(filteredResults);
       setSearchCenter(data.search_center || pin);
+      lastSearchRadiusRef.current = radius;
       placeMarkers(filteredResults, data.search_center || pin, radius);
       setStatus(
         `Found ${filteredResults.length} location(s) near ${areaLabel} (area search: ${radius} miles).${
@@ -976,6 +1007,7 @@ export default function App() {
         }`
       );
     } catch (err) {
+      searchResultsScopeRef.current = [];
       setSearchResults([]);
       setSearchCenter(null);
       setHasSearched(false);
@@ -984,7 +1016,7 @@ export default function App() {
     } finally {
       setSearching(false);
     }
-  }, [filterResultsByScope, getFocusedSearchRadiusMiles, placeMarkers, restorePreview, selectedType]);
+  }, [applyPlaceTypeFilter, filterResultsByScope, getFocusedSearchRadiusMiles, placeMarkers, restorePreview, selectedTypes]);
 
   const openAreaSearchPrompt = useCallback((latLng, areaLabel = "this area") => {
     const map = mapRef.current;
@@ -1018,6 +1050,9 @@ export default function App() {
     wrapper.appendChild(hint);
     wrapper.appendChild(button);
 
+    infoWindowRef.current.setOptions({
+      pixelOffset: new window.google.maps.Size(0, AREA_PROMPT_PIN_PEEK_OFFSET_Y),
+    });
     infoWindowRef.current.setPosition(latLng);
     infoWindowRef.current.setContent(wrapper);
     infoWindowRef.current.open(map);
@@ -1174,9 +1209,11 @@ export default function App() {
         if (!active) return;
 
         const previewRaw = Array.isArray(previewData) ? previewData : [];
-        const previewFiltered = filterResultsByScope(previewRaw);
+        const scopeFilteredPreview = filterResultsByScope(previewRaw);
+        const previewFiltered = applyPlaceTypeFilter(scopeFilteredPreview);
         const filteredOut = previewRaw.length - previewFiltered.length;
 
+        previewResultsScopeRef.current = scopeFilteredPreview;
         setPreviewResults(previewFiltered);
         if (previewFiltered.length > 0) {
           placeMarkers(previewFiltered, null, DEFAULT_RADIUS_MILES);
@@ -1207,6 +1244,7 @@ export default function App() {
     clearResultMarkers,
     clearSearchOverlay,
     mapTheme,
+    applyPlaceTypeFilter,
     filterResultsByScope,
     placeMarkers,
     refreshBoundaryStyles,
@@ -1231,12 +1269,14 @@ export default function App() {
         position: droppedPin,
         title: "Dropped pin",
         icon: {
-          path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-          scale: 6,
+          // Teardrop pin shape
+          path: "M12 2C8.13 2 5 5.13 5 9c0 5.1 6.2 11.8 6.46 12.08a.75.75 0 0 0 1.08 0C12.8 20.8 19 14.1 19 9c0-3.87-3.13-7-7-7z",
+          scale: 1.2,
           fillColor: "#1D4ED8",
           fillOpacity: 1,
-          strokeColor: "#ffffff",
-          strokeWeight: 1.5,
+          strokeColor: "#0b3aa6",
+          strokeWeight: 1.2,
+          anchor: new window.google.maps.Point(12, 22),
         },
       });
     } else {
@@ -1245,7 +1285,7 @@ export default function App() {
     }
   }, [droppedPin]);
 
-  async function runRadiusSearch(sourceHint, overrideAddress = null, overridePlaceType = null) {
+  async function runRadiusSearch(sourceHint, overrideAddress = null, overridePlaceTypes = null) {
     setError("");
 
     const parsedRadius = Number.parseFloat(radiusMiles);
@@ -1264,8 +1304,16 @@ export default function App() {
       radius_miles: parsedRadius,
       limit: DEFAULT_LIMIT,
     };
-    const effectivePlaceType = overridePlaceType ?? selectedType;
-    if (effectivePlaceType) payload.place_type = effectivePlaceType;
+    const normalizedOverrideTypes = normalizePlaceTypesInput(overridePlaceTypes);
+    const effectivePlaceTypes = normalizedOverrideTypes.length
+      ? normalizedOverrideTypes
+      : normalizePlaceTypesInput(selectedTypes);
+
+    if (effectivePlaceTypes.length === 1) {
+      payload.place_type = effectivePlaceTypes[0];
+    } else if (effectivePlaceTypes.length > 1) {
+      payload.place_types = effectivePlaceTypes;
+    }
 
     if (useAddress) {
       if (!hasAddress) {
@@ -1295,9 +1343,11 @@ export default function App() {
         throw new Error(data?.error || `Search failed (${response.status})`);
       }
       const rawResults = data.results || [];
-      const filteredResults = filterResultsByScope(rawResults);
+      const scopeFilteredResults = filterResultsByScope(rawResults);
+      const filteredResults = applyPlaceTypeFilter(scopeFilteredResults, effectivePlaceTypes);
       const filteredOut = rawResults.length - filteredResults.length;
 
+      searchResultsScopeRef.current = scopeFilteredResults;
       setSearchResults(filteredResults);
       setSearchCenter(data.search_center || null);
       setLastSearchSource(data.search_source || (useAddress ? "address" : "pin"));
@@ -1305,9 +1355,11 @@ export default function App() {
         setLastResolvedAddress(data.geocode.formatted_address);
       }
 
+      lastSearchRadiusRef.current = parsedRadius;
       placeMarkers(filteredResults, data.search_center || null, parsedRadius);
       setStatus(t.foundLocations(filteredResults.length, parsedRadius, filteredOut));
     } catch (err) {
+      searchResultsScopeRef.current = [];
       setSearchResults([]);
       setSearchCenter(null);
       restorePreview();
@@ -1318,6 +1370,7 @@ export default function App() {
   }
 
   function clearSearchState() {
+    searchResultsScopeRef.current = [];
     setSearchResults([]);
     setSearchCenter(null);
     setHasSearched(false);
@@ -1341,16 +1394,24 @@ export default function App() {
       const intent = await res.json();
       setParsedIntent(intent);
       // Apply extracted place_type as the active filter chip
-      if (intent.place_type) setSelectedType(intent.place_type);
+      if (intent.place_type) setSelectedTypes([intent.place_type]);
       // Use extracted address or neighborhood for the radius search
       if (intent.address) {
         setAddressInput(intent.address);
-        await runRadiusSearch("address", intent.address, intent.place_type);
+        await runRadiusSearch(
+          "address",
+          intent.address,
+          intent.place_type ? [intent.place_type] : null
+        );
       } else if (intent.neighborhood) {
         setAddressInput(intent.neighborhood + ", Boston, MA");
-        await runRadiusSearch("address", intent.neighborhood + ", Boston, MA", intent.place_type);
+        await runRadiusSearch(
+          "address",
+          intent.neighborhood + ", Boston, MA",
+          intent.place_type ? [intent.place_type] : null
+        );
       } else if (droppedPin) {
-        await runRadiusSearch("pin", null, intent.place_type);
+        await runRadiusSearch("pin", null, intent.place_type ? [intent.place_type] : null);
       } else {
         setError(t.geminiNoLocation);
       }
@@ -1365,7 +1426,7 @@ export default function App() {
     setNlQuery("");
     setParsedIntent(null);
     setAddressInput("");
-    setSelectedType("");
+    setSelectedTypes([]);
     setRadiusMiles(String(DEFAULT_RADIUS_MILES));
     setDroppedPin(null);
     clearSearchState();
@@ -1377,6 +1438,20 @@ export default function App() {
     clearSearchState();
     infoWindowRef.current?.close();
   }
+
+  useEffect(() => {
+    const filteredPreview = applyPlaceTypeFilter(previewResultsScopeRef.current);
+    const filteredSearch = applyPlaceTypeFilter(searchResultsScopeRef.current);
+
+    setPreviewResults(filteredPreview);
+    setSearchResults(filteredSearch);
+
+    if (hasSearched) {
+      placeMarkers(filteredSearch, searchCenter || null, lastSearchRadiusRef.current);
+    } else {
+      placeMarkers(filteredPreview, null, DEFAULT_RADIUS_MILES);
+    }
+  }, [applyPlaceTypeFilter, hasSearched, placeMarkers, searchCenter, selectedTypes]);
 
   const formatMetric = (value, digits = 2) => {
     if (value == null || Number.isNaN(value)) return "N/A";
@@ -1507,9 +1582,24 @@ export default function App() {
             ].map((option) => (
               <button
                 key={option.value}
-                className={`chip ${selectedType === option.value ? "chip-active" : ""}`}
+                className={`chip ${
+                  option.value === ""
+                    ? (selectedTypes.length === 0 ? "chip-active" : "")
+                    : (selectedTypes.includes(option.value) ? "chip-active" : "")
+                }`}
                 type="button"
-                onClick={() => setSelectedType(option.value)}
+                onClick={() => {
+                  if (option.value === "") {
+                    setSelectedTypes([]);
+                    return;
+                  }
+
+                  setSelectedTypes((current) =>
+                    current.includes(option.value)
+                      ? current.filter((value) => value !== option.value)
+                      : [...current, option.value]
+                  );
+                }}
               >
                 {option.label}
               </button>
