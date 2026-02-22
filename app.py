@@ -270,6 +270,14 @@ def neighborhood_metrics():
         return jsonify({"error": str(e)}), 503
 
 
+@app.route("/api/citywide-averages")
+def citywide_averages():
+    try:
+        return jsonify(mongo.get_citywide_food_averages())
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+
+
 @app.route("/api/gemini/parse-search", methods=["POST"])
 def gemini_parse_search():
     body = request.get_json(silent=True) or {}

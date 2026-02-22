@@ -209,6 +209,65 @@ def get_income_inequality():
     return list(db["income_inequality"].find({}, {"_id": 0})) if "income_inequality" in db.list_collection_names() else []
 
 
+def get_citywide_food_averages():
+    """
+    Returns per-1k food access averages across all Boston neighborhoods,
+    plus per-neighborhood per-1k data for line chart comparison.
+    """
+    db = get_db()
+    population_lookup = _load_population_lookup()
+
+    # Aggregate counts per neighborhood per place_type
+    pipeline = [
+        {"$group": {"_id": {"neighborhood": "$neighborhood_name", "type": "$place_type"}, "count": {"$sum": 1}}},
+    ]
+    rows = list(db["food-distributors"].aggregate(pipeline))
+
+    # Build a dict: neighborhood -> {place_type: count}
+    nbhd_counts = {}
+    for row in rows:
+        nbhd = (row["_id"].get("neighborhood") or "").strip()
+        ptype = row["_id"].get("type") or "other"
+        if not nbhd:
+            continue
+        if nbhd not in nbhd_counts:
+            nbhd_counts[nbhd] = {"restaurant": 0, "grocery_store": 0, "farmers_market": 0, "food_pantry": 0}
+        if ptype in nbhd_counts[nbhd]:
+            nbhd_counts[nbhd][ptype] += int(row["count"])
+
+    # Compute per-1k for each neighborhood
+    KEYS = ["restaurant", "grocery_store", "farmers_market", "food_pantry"]
+    per_1k_by_nbhd = {}
+    for nbhd, counts in nbhd_counts.items():
+        pop = population_lookup.get(_normalize_neighborhood_name(nbhd))
+        if not pop or pop <= 0:
+            continue
+        per_1k_by_nbhd[nbhd] = {k: round((counts[k] / pop) * 1000, 3) for k in KEYS}
+
+    # Citywide averages
+    citywide = {}
+    for k in KEYS:
+        vals = [v[k] for v in per_1k_by_nbhd.values() if v[k] is not None]
+        citywide[k] = round(_avg(vals), 3) if vals else None
+
+    # Line-chart series: one entry per neighborhood, sorted by restaurant per-1k
+    series = [
+        {"neighborhood": nbhd, **vals}
+        for nbhd, vals in per_1k_by_nbhd.items()
+    ]
+    series.sort(key=lambda x: x.get("restaurant") or 0, reverse=True)
+
+    return {
+        "citywide_avg_per_1000": {
+            "restaurants": citywide["restaurant"],
+            "grocery_stores": citywide["grocery_store"],
+            "farmers_markets": citywide["farmers_market"],
+            "food_pantries": citywide["food_pantry"],
+        },
+        "neighborhoods": series,
+    }
+
+
 def get_neighborhood_metrics(neighborhood_name):
     db = get_db()
     normalized_name = _normalize_neighborhood_name(neighborhood_name)
