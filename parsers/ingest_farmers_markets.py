@@ -23,12 +23,14 @@ import pandas as pd
 from pymongo import MongoClient
 from pymongo.collection import Collection
 
+from parsers.neighborhood_mapper import NeighborhoodMapper, assign_neighborhood
+
 SOURCE_NAME = "MassGrown"
 SOURCE_FILE = "farmers_market.csv"
-DEFAULT_INPUT = f"/mnt/data/Copy of {SOURCE_FILE}"
-DEFAULT_REJECTS = "/mnt/data/farmers_market_rejects.json"
+DEFAULT_INPUT = "data/cleaned_data/farmers_market.csv"
+DEFAULT_REJECTS = "data/rejects/farmers_market_rejects.json"
 DEFAULT_DB = "food-distributors"
-DEFAULT_COLLECTION = "farmers_markets"
+DEFAULT_COLLECTION = "food-distributors"
 GEOCODE_CACHE_COLLECTION = "geocode_cache"
 
 # Viewport bias around Greater Boston (bias only, not strict restriction).
@@ -195,6 +197,7 @@ def normalize_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "dedupe_key": dedupe_key,
         "name": name,
+        "datatype": "farmers market",
         "place_type": "farmers_market",
         "subtype": derive_subtype(name, description),
         "description": description,
@@ -443,6 +446,7 @@ def upsert_unit(collection: Collection, doc: dict[str, Any]) -> str:
         "$set": {
             "dedupe_key": doc["dedupe_key"],
             "name": doc["name"],
+            "datatype": doc["datatype"],
             "place_type": doc["place_type"],
             "subtype": doc["subtype"],
             "description": doc["description"],
@@ -465,10 +469,15 @@ def resolve_input_path(cli_path: str) -> Path:
     candidate = Path(cli_path)
     if candidate.exists():
         return candidate
-    local_fallback = Path("data/farmers_market.csv")
-    if local_fallback.exists():
-        LOGGER.info("Input not found at %s; using fallback %s", cli_path, local_fallback)
-        return local_fallback
+
+    local_fallbacks = [
+        Path("data/cleaned_data/farmers_market.csv"),
+        Path("data/farmers_market.csv"),
+    ]
+    for fallback in local_fallbacks:
+        if fallback.exists():
+            LOGGER.info("Input not found at %s; using fallback %s", cli_path, fallback)
+            return fallback
     raise FileNotFoundError(f"Input file not found: {cli_path}")
 
 
@@ -477,7 +486,7 @@ def resolve_rejects_output_path(requested: Path) -> Path:
         requested.parent.mkdir(parents=True, exist_ok=True)
         return requested
     except OSError:
-        fallback = Path("data/farmers_market_rejects.json")
+        fallback = Path("data/rejects/farmers_market_rejects.json")
         fallback.parent.mkdir(parents=True, exist_ok=True)
         LOGGER.warning(
             "Rejects path %s not writable; falling back to %s",
@@ -521,6 +530,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     configure_logging()
     args = parse_args()
+    mapper = NeighborhoodMapper()
 
     mongo_uri = os.getenv("MONGO_CONNECTION")
     mongo_db = os.getenv("MONGO_DB", DEFAULT_DB)
@@ -618,6 +628,8 @@ def main() -> None:
             else:
                 geocode_failed_by_status[geocode_result.get("status", "UNKNOWN")] += 1
 
+        assign_neighborhood(doc, mapper)
+
         if args.dry_run and sample_doc is None:
             sample_doc = json.loads(json.dumps(doc, default=str))
 
@@ -659,10 +671,17 @@ def main() -> None:
         print("\nDry-run inferred schema (pretty):")
         print(json.dumps(infer_schema(sample_doc), indent=2, ensure_ascii=False))
 
+    collection_expr = (
+        mongo_collection_name
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", mongo_collection_name)
+        else f'getCollection("{mongo_collection_name}")'
+    )
+
     print("\nRecommended MongoDB indexes:")
-    print("1. db.food_distribution_units.createIndex({ dedupe_key: 1 }, { unique: true })")
-    print('2. db.food_distribution_units.createIndex({ location: "2dsphere" })')
-    print("3. db.geocode_cache.createIndex({ geocode_query_hash: 1 }, { unique: true })")
+    print(f"1. db.{collection_expr}.createIndex({{ dedupe_key: 1 }}, {{ unique: true }})")
+    print(f'2. db.{collection_expr}.createIndex({{ location: "2dsphere" }})')
+    print(f"3. db.{collection_expr}.createIndex({{ datatype: 1, subtype: 1 }})")
+    print("4. db.geocode_cache.createIndex({ geocode_query_hash: 1 }, { unique: true })")
 
     if client is not None:
         client.close()

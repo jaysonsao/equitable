@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Verify a parser's row output matches ingest_farmers_markets.normalize_row."""
+"""Verify a parser's row output matches parsers.ingest_farmers_markets.normalize_row.
 
-"""How to run: 
-
-python tests/verify_parser_matches_ingest.py --input data/farmers_market.csv --limit 5
+How to run:
+python tests/verify_parser_matches_ingest.py --input data/cleaned_data/farmers_market.csv --limit 5
 If this passes upload to mongodb.
-
 """
 
 from __future__ import annotations
@@ -23,20 +21,20 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ingest_farmers_markets import normalize_row
+from parsers.ingest_farmers_markets import normalize_row
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare a parser output against ingest_farmers_markets.normalize_row "
+            "Compare a parser output against parsers.ingest_farmers_markets.normalize_row "
             "for each CSV row."
         )
     )
-    parser.add_argument("--input", default="data/farmers_market.csv", help="CSV input file path")
+    parser.add_argument("--input", default="data/cleaned_data/farmers_market.csv", help="CSV input file path")
     parser.add_argument(
         "--parser-module",
-        default="ingest_farmers_markets",
+        default="parsers.ingest_farmers_markets",
         help="Python module containing parser function under test",
     )
     parser.add_argument(

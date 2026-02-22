@@ -37,7 +37,7 @@ The Flask server now connects to MongoDB using `pymongo`.
 
 | Endpoint | Collection | Source CSV |
 |---|---|---|
-| `GET /api/farmers-markets` | `farmers_markets` | `data/farmers_market.csv` |
+| `GET /api/farmers-markets` | `farmers_markets` | `data/cleaned_data/farmers_market.csv` |
 | `GET /api/income-inequality` | `income_inequality` | `data/Income_inequality_index_PolicyMap.csv` |
 
 ### Seed Script: `seed.py`

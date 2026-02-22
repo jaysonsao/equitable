@@ -43,7 +43,10 @@ def seed_farmers_markets():
     collection = db["farmers_markets"]
     collection.drop()
     rows = []
-    with open(ROOT / "data" / "farmers_market.csv", encoding="utf-8") as f:
+    farmers_csv = ROOT / "data" / "cleaned_data" / "farmers_market.csv"
+    if not farmers_csv.exists():
+        farmers_csv = ROOT / "data" / "farmers_market.csv"
+    with open(farmers_csv, encoding="utf-8") as f:
         # Skip the first non-header line ("MassGrown Map Export")
         first = f.readline().strip()
         if not first.startswith("LocationName"):

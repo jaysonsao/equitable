@@ -1,1 +1,5 @@
 normalize by population density
+
+api gemini call to check if it's open on demand..?
+
+make sure you can see food distributors with and without the neighborhoods

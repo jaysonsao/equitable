@@ -31,10 +31,12 @@ def load_dot_env(filepath: Path) -> dict:
 dot_env = load_dot_env(ROOT / ".env")
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API") or dot_env.get("GOOGLE_MAPS_API", "")
 MONGO_URI = os.environ.get("MONGO_URI") or dot_env.get("MONGO_URI", "")
+MONGO_DB = os.environ.get("MONGO_DB") or dot_env.get("MONGO_DB", "food-distributors")
+MONGO_COLLECTION = os.environ.get("MONGO_COLLECTION") or dot_env.get("MONGO_COLLECTION", "food-distributors")
 
 # MongoDB connection
 mongo_client = MongoClient(MONGO_URI) if MONGO_URI else None
-db = mongo_client["equitable"] if mongo_client else None
+db = mongo_client[MONGO_DB] if mongo_client else None
 
 
 @app.route("/config.js")
@@ -47,8 +49,16 @@ def config_js():
 def farmers_markets():
     if db is None:
         return jsonify({"error": "No MongoDB connection"}), 503
-    markets = list(db["farmers_markets"].find({}, {"_id": 0}))
+    markets = list(db[MONGO_COLLECTION].find({"datatype": "farmers market"}, {"_id": 0}))
     return jsonify(markets)
+
+
+@app.route("/api/food-distributors")
+def food_distributors():
+    if db is None:
+        return jsonify({"error": "No MongoDB connection"}), 503
+    data = list(db[MONGO_COLLECTION].find({}, {"_id": 0}))
+    return jsonify(data)
 
 
 @app.route("/api/income-inequality")
