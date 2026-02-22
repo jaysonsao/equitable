@@ -1060,24 +1060,6 @@ select.control-input {
   margin-top: 0.45rem;
 }
 
-.census-info-link {
-  margin-top: 0.35rem;
-  align-self: flex-start;
-  border: none;
-  background: transparent;
-  color: var(--accent);
-  font-size: 0.68rem;
-  font-weight: 700;
-  padding: 0;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.census-info-link:hover {
-  color: #0a5e43;
-}
-
 /* ── Charts modal ───────────────────────────────────────── */
 .modal-backdrop {
   position: fixed;

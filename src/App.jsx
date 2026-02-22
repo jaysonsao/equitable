@@ -103,10 +103,6 @@ const TRANSLATIONS = {
     sourceLabel: "Source",
     censusRowsLabel: "Tracts loaded",
     lastUpdatedLabel: "Last Updated",
-    additionalInfo: "Additional information",
-    censusInfoTitle: "Confidence & Completeness",
-    censusInfoConfidence: "Confidence reflects estimate precision based on Census margins of error.",
-    censusInfoCompleteness: "Completeness reflects whether required Census fields are present for each tract.",
     confidenceLabel: "Confidence",
     completenessLabel: "Completeness",
     notAvailable: "N/A",
@@ -178,10 +174,6 @@ const TRANSLATIONS = {
     sourceLabel: "Fuente",
     censusRowsLabel: "Tractos cargados",
     lastUpdatedLabel: "Última actualización",
-    additionalInfo: "Información adicional",
-    censusInfoTitle: "Confianza y Completitud",
-    censusInfoConfidence: "La confianza refleja la precisión de las estimaciones según los márgenes de error del censo.",
-    censusInfoCompleteness: "La completitud refleja si los campos requeridos del censo están presentes por tracto.",
     confidenceLabel: "Confianza",
     completenessLabel: "Completitud",
     notAvailable: "N/D",
@@ -806,7 +798,6 @@ export default function App() {
   const [lastResolvedAddress, setLastResolvedAddress] = useState("");
   const [censusTrust, setCensusTrust] = useState(null);
   const [showCensusTrust, setShowCensusTrust] = useState(false);
-  const [showCensusInfoModal, setShowCensusInfoModal] = useState(false);
   const [selectedNeighborhood, setSelectedNeighborhood] = useState("");
   const [neighborhoodMetrics, setNeighborhoodMetrics] = useState(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
@@ -2038,13 +2029,6 @@ export default function App() {
                     <span className="dataset-meta">{formatTimestamp(censusTrust.lastUpdated)}</span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  className="census-info-link"
-                  onClick={() => setShowCensusInfoModal(true)}
-                >
-                  {t.additionalInfo}
-                </button>
               </section>
             )}
           </div>
@@ -2148,20 +2132,6 @@ export default function App() {
         </div>
       )}
 
-      {showCensusInfoModal && (
-        <div className="modal-backdrop" onClick={() => setShowCensusInfoModal(false)}>
-          <div className="modal-card" style={{ maxWidth: "520px" }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">{t.censusInfoTitle}</span>
-              <button className="modal-close" onClick={() => setShowCensusInfoModal(false)} aria-label="Close">×</button>
-            </div>
-            <div className="modal-section">
-              <p className="dataset-caption">{t.censusInfoConfidence}</p>
-              <p className="dataset-caption">{t.censusInfoCompleteness}</p>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
