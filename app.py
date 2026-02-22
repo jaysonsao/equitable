@@ -259,8 +259,44 @@ def income_inequality():
 def neighborhood_stats():
     city = (request.args.get("city") or "Boston").strip() or "Boston"
     collection_name = (request.args.get("collection") or "neighborhoods").strip() or "neighborhoods"
+    include_meta_raw = (request.args.get("include_meta") or "1").strip().lower()
+    include_meta = include_meta_raw not in {"0", "false", "no"}
     try:
-        return jsonify(mongo.get_neighborhood_stats(city=city, collection_name=collection_name))
+        return jsonify(
+            mongo.get_neighborhood_stats(
+                city=city,
+                collection_name=collection_name,
+                include_meta=include_meta,
+            )
+        )
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+
+
+@app.route("/api/census-geographies")
+def census_geographies():
+    level = (request.args.get("level") or "tract").strip() or "tract"
+    city_scope = (request.args.get("city_scope") or "Boston").strip() or "Boston"
+    collection_name = (request.args.get("collection") or "census_geo_profiles").strip() or "census_geo_profiles"
+    limit_raw = request.args.get("limit")
+    vintage_raw = request.args.get("vintage")
+
+    try:
+        limit = _to_int(limit_raw, "limit") if limit_raw is not None else 5000
+        if limit < 1:
+            return jsonify({"error": "limit must be at least 1"}), 400
+
+        vintage = _to_int(vintage_raw, "vintage") if vintage_raw is not None else None
+        rows = mongo.get_census_geographies(
+            level=level,
+            city_scope=city_scope,
+            vintage=vintage,
+            limit=limit,
+            collection_name=collection_name,
+        )
+        return jsonify(rows)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 503
 

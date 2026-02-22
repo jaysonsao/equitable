@@ -206,6 +206,36 @@ def build_stats_lookup(collection) -> dict[int, dict[str, int]]:
     return stats_lookup
 
 
+def quality_label(score: float) -> str:
+    if score >= 0.9:
+        return "high"
+    if score >= 0.7:
+        return "medium"
+    return "low"
+
+
+def build_neighborhood_quality(population, avg_household_income, gini_index, geometry) -> tuple[dict, dict]:
+    checks = {
+        "population": population is not None,
+        "avg_household_income": avg_household_income is not None,
+        "gini_index": gini_index is not None,
+        "geometry": geometry is not None,
+    }
+    missing = [key for key, present in checks.items() if not present]
+    score = (len(checks) - len(missing)) / len(checks)
+
+    completeness = {
+        "score": round(score, 3),
+        "label": quality_label(score),
+        "missing_fields": missing,
+    }
+    confidence = {
+        "label": "high" if score >= 0.75 else "medium",
+        "method": "Neighborhood canonical-name join across population/socioeconomic sources and boundary geometry.",
+    }
+    return confidence, completeness
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Seed neighborhoods collection")
     parser.add_argument("--collection", default=DEFAULT_COLLECTION, help="Target neighborhoods collection name")
@@ -280,6 +310,13 @@ def main() -> None:
             continue
 
         legacy_id, canonical_name, population, gini_index = population_rows[key]
+        avg_household_income = socioeconomic_income.get(key)
+        confidence, completeness = build_neighborhood_quality(
+            population=population,
+            avg_household_income=avg_household_income,
+            gini_index=gini_index,
+            geometry=geometry,
+        )
 
         docs.append(
             {
@@ -287,7 +324,7 @@ def main() -> None:
                 "name": canonical_name,
                 "city": args.city,
                 "population": population,
-                "avg_household_income": socioeconomic_income.get(key),
+                "avg_household_income": avg_household_income,
                 "gini_index": gini_index,
                 "geometry": geometry,
                 "stats": stats_lookup.get(
@@ -301,6 +338,17 @@ def main() -> None:
                 ),
                 "stats_updated_at": now,
                 "source_file": Path(args.geojson).name,
+                "source": {
+                    "provider": "EquiTable Food Systems / local seed pipeline",
+                    "dataset": "Boston neighborhood baseline",
+                    "geojson_file": Path(args.geojson).name,
+                    "population_file": Path(args.population_csv).name,
+                    "socioeconomic_file": Path(args.socio_csv).name,
+                    "ingestion_script": "scripts/seed_neighboorhoods.py",
+                },
+                "last_updated": now,
+                "confidence": confidence,
+                "completeness": completeness,
                 "updated_at": now,
             }
         )
@@ -339,7 +387,10 @@ def main() -> None:
         upserts += 1
 
     target_collection.create_index("neighborhood_id", unique=True)
-    target_collection.create_index([("geometry", "2dsphere")])
+    try:
+        target_collection.create_index([("geometry", "2dsphere")])
+    except Exception as exc:
+        print(f"Warning: could not create 2dsphere index on '{args.collection}': {exc}")
     print(f"Upserted {upserts} documents into '{args.collection}' in database '{mongo_db_name}'.")
 
     if not args.no_secondary:
@@ -364,7 +415,10 @@ def main() -> None:
                 secondary_upserts += 1
 
             secondary_collection.create_index("neighborhood_id", unique=True)
-            secondary_collection.create_index([("geometry", "2dsphere")])
+            try:
+                secondary_collection.create_index([("geometry", "2dsphere")])
+            except Exception as exc:
+                print(f"Warning: could not create 2dsphere index on '{secondary_name}': {exc}")
             print(
                 f"Upserted {secondary_upserts} documents into '{secondary_name}' "
                 f"in database '{mongo_db_name}'."

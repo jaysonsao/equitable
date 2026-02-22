@@ -96,6 +96,20 @@ const TRANSLATIONS = {
     compareDifferent: "Choose two different neighborhoods.",
     overview: "Overview", povertyRate: "Poverty Rate", avgGini: "Avg Gini",
     foodLocationCounts: "Food Location Counts", per1000Residents: "Per 1,000 Residents",
+    censusQualityTitle: "Census Tract Quality",
+    sourceLabel: "Source",
+    censusRowsLabel: "Tracts loaded",
+    lastUpdatedLabel: "Last Updated",
+    additionalInfo: "Additional information",
+    censusInfoTitle: "Confidence & Completeness",
+    censusInfoConfidence: "Confidence reflects estimate precision based on Census margins of error.",
+    censusInfoCompleteness: "Completeness reflects whether required Census fields are present for each tract.",
+    confidenceLabel: "Confidence",
+    completenessLabel: "Completeness",
+    notAvailable: "N/A",
+    viewNeighborhoodBtn: "View This Neighborhood",
+    viewingNeighborhood: (count, neighborhood, hidden) => `Showing ${count} location(s) in ${neighborhood}.${hidden > 0 ? ` ${hidden} outside current scope hidden.` : ""}`,
+    neighborhoodViewFailed: "Neighborhood view failed",
   },
   es: {
     tabMap: "Búsqueda en Mapa", tabCompare: "Comparar",
@@ -154,6 +168,20 @@ const TRANSLATIONS = {
     compareDifferent: "Elige dos vecindarios diferentes.",
     overview: "Resumen", povertyRate: "Tasa de Pobreza", avgGini: "Gini Promedio",
     foodLocationCounts: "Cantidad de Lugares de Comida", per1000Residents: "Por 1,000 Residentes",
+    censusQualityTitle: "Calidad de Tractos Censales",
+    sourceLabel: "Fuente",
+    censusRowsLabel: "Tractos cargados",
+    lastUpdatedLabel: "Última actualización",
+    additionalInfo: "Información adicional",
+    censusInfoTitle: "Confianza y Completitud",
+    censusInfoConfidence: "La confianza refleja la precisión de las estimaciones según los márgenes de error del censo.",
+    censusInfoCompleteness: "La completitud refleja si los campos requeridos del censo están presentes por tracto.",
+    confidenceLabel: "Confianza",
+    completenessLabel: "Completitud",
+    notAvailable: "N/D",
+    viewNeighborhoodBtn: "Ver Este Vecindario",
+    viewingNeighborhood: (count, neighborhood, hidden) => `Mostrando ${count} lugar(es) en ${neighborhood}.${hidden > 0 ? ` ${hidden} fuera del alcance actual ocultos.` : ""}`,
+    neighborhoodViewFailed: "La vista de vecindario falló",
   },
 };
 
@@ -440,6 +468,10 @@ const PLACE_TYPE_LABELS = {
   grocery_store: "Grocery Store",
 };
 
+const CHIP_ACTIVE_TEXT_COLOR = {
+  farmers_market: "#1f2937",
+};
+
 // Map Gini score t∈[0,1] to a color: light yellow → dark red
 function giniToColor(t) {
   const r = Math.round(255 + (128 - 255) * t);
@@ -480,6 +512,7 @@ const GOOGLE_MAPS_API_KEY =
 const MIN_RADIUS_MILES = 0.1;
 const DEFAULT_RADIUS_MILES = 0.5;
 const DEFAULT_LIMIT = 350;
+const DEFAULT_NEIGHBORHOOD_LIMIT = 2000;
 const PREVIEW_SAMPLE_PCT = 0.1;
 const METERS_PER_MILE = 1609.344;
 const AREA_PROMPT_PIN_PEEK_OFFSET_Y = -18;
@@ -733,6 +766,7 @@ export default function App() {
   const radiusCircleRef = useRef(null);
   const hoveredNeighborhoodRef = useRef("");
   const runAreaSearchAtRef = useRef(async () => {});
+  const runNeighborhoodViewRef = useRef(async () => {});
   const openAreaSearchPromptRef = useRef(() => {});
   const lastFeatureClickTsRef = useRef(0);
   const previewResultsScopeRef = useRef([]);
@@ -764,6 +798,9 @@ export default function App() {
   const [searchCenter, setSearchCenter] = useState(null);
   const [lastSearchSource, setLastSearchSource] = useState("");
   const [lastResolvedAddress, setLastResolvedAddress] = useState("");
+  const [censusTrust, setCensusTrust] = useState(null);
+  const [showCensusTrust, setShowCensusTrust] = useState(false);
+  const [showCensusInfoModal, setShowCensusInfoModal] = useState(false);
   const [selectedNeighborhood, setSelectedNeighborhood] = useState("");
   const [neighborhoodMetrics, setNeighborhoodMetrics] = useState(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
@@ -985,6 +1022,30 @@ export default function App() {
     }
   }, [clearResultMarkers, renderSearchOverlay]);
 
+  const focusNeighborhoodOnMap = useCallback((neighborhoodName) => {
+    const map = mapRef.current;
+    if (!map || !neighborhoodName) return false;
+
+    const target = normalizeNeighborhood(neighborhoodName);
+    const bounds = new window.google.maps.LatLngBounds();
+    let found = false;
+
+    map.data.forEach((feature) => {
+      const name = getNeighborhoodName(feature);
+      if (normalizeNeighborhood(name) !== target) return;
+
+      const geometry = feature.getGeometry();
+      if (!geometry) return;
+      extendBoundsFromGeometry(bounds, geometry);
+      found = true;
+    });
+
+    if (found && !bounds.isEmpty()) {
+      map.fitBounds(bounds, 80);
+    }
+    return found;
+  }, []);
+
   const restorePreview = useCallback(() => {
     const tr = TRANSLATIONS[langRef.current] || TRANSLATIONS.en;
     if (previewResults.length > 0) {
@@ -1069,7 +1130,7 @@ export default function App() {
     return true;
   }, [applyPlaceTypeFilter, filterResultsByScope, getFocusedSearchRadiusMiles, placeMarkers, restorePreview, selectedTypes]);
 
-  const openAreaSearchPrompt = useCallback((latLng, areaLabel = "this area") => {
+  const openAreaSearchPrompt = useCallback((latLng, areaLabel = "this area", neighborhoodName = null) => {
     const map = mapRef.current;
     if (!map || !latLng || !infoWindowRef.current) return;
 
@@ -1102,9 +1163,25 @@ export default function App() {
       }
     });
 
+    let viewNeighborhoodButton = null;
+    if (neighborhoodName) {
+      viewNeighborhoodButton = document.createElement("button");
+      viewNeighborhoodButton.type = "button";
+      viewNeighborhoodButton.className = "info-window-view-btn";
+      viewNeighborhoodButton.textContent = tr.viewNeighborhoodBtn;
+      viewNeighborhoodButton.disabled = searching;
+      viewNeighborhoodButton.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await runNeighborhoodViewRef.current(neighborhoodName);
+        infoWindowRef.current?.close();
+      });
+    }
+
     wrapper.appendChild(title);
     wrapper.appendChild(hint);
     wrapper.appendChild(button);
+    if (viewNeighborhoodButton) wrapper.appendChild(viewNeighborhoodButton);
 
     infoWindowRef.current.setOptions({
       pixelOffset: new window.google.maps.Size(0, AREA_PROMPT_PIN_PEEK_OFFSET_Y),
@@ -1166,6 +1243,7 @@ export default function App() {
           fetch(BOSTON_GEOJSON),
           fetch("/api/neighborhood-stats"),
         ]);
+        const censusTrustRes = await fetch("/api/census-geographies?level=tract&city_scope=Boston&limit=5000");
         if (!response.ok) throw new Error(`Boundary file failed to load (${response.status}).`);
 
         if (incomeRes.ok) {
@@ -1184,6 +1262,34 @@ export default function App() {
             giniRangeRef.current = { min, max };
             setGiniRange({ min, max });
           }
+        }
+
+        if (censusTrustRes.ok) {
+          const censusRows = await censusTrustRes.json();
+          if (Array.isArray(censusRows) && censusRows.length > 0) {
+            const first = censusRows[0] || {};
+            const confidenceScores = censusRows
+              .map((row) => row?.confidence?.score)
+              .filter((value) => typeof value === "number" && Number.isFinite(value));
+            const completenessScores = censusRows
+              .map((row) => row?.completeness?.score)
+              .filter((value) => typeof value === "number" && Number.isFinite(value));
+            const avg = (values) =>
+              values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+
+            setCensusTrust({
+              tractCount: censusRows.length,
+              vintage: first.vintage ?? null,
+              source: first.source ?? null,
+              lastUpdated: first.last_updated ?? null,
+              confidenceAvg: avg(confidenceScores),
+              completenessAvg: avg(completenessScores),
+            });
+          } else {
+            setCensusTrust(null);
+          }
+        } else {
+          setCensusTrust(null);
         }
 
 
@@ -1256,7 +1362,7 @@ export default function App() {
           setSelectedNeighborhood(name);
           setMetricsError("");
           setMetricsLoading(true);
-          openAreaSearchPromptRef.current(event.latLng, name);
+          openAreaSearchPromptRef.current(event.latLng, name, name);
 
           try {
             const metricsResponse = await fetch(
@@ -1302,7 +1408,7 @@ export default function App() {
           }
           const nextPin = { lat: event.latLng.lat(), lng: event.latLng.lng() };
           setDroppedPin(nextPin);
-          openAreaSearchPromptRef.current(event.latLng, "Selected area");
+          openAreaSearchPromptRef.current(event.latLng, "Selected area", null);
         });
 
         setStatus(t.loadingSampled);
@@ -1474,6 +1580,63 @@ export default function App() {
     }
   }
 
+  const runNeighborhoodView = useCallback(async (neighborhoodNameOverride = null) => {
+    const tr = TRANSLATIONS[langRef.current] || TRANSLATIONS.en;
+    const neighborhoodName = String(neighborhoodNameOverride ?? selectedNeighborhood ?? "").trim();
+    if (!neighborhoodName) return;
+
+    const activePlaceTypes = normalizePlaceTypesInput(selectedTypes);
+    const params = new URLSearchParams({
+      neighborhood: neighborhoodName,
+      limit: String(DEFAULT_NEIGHBORHOOD_LIMIT),
+    });
+    if (activePlaceTypes.length === 1) {
+      params.set("place_type", activePlaceTypes[0]);
+    } else if (activePlaceTypes.length > 1) {
+      params.set("place_types", activePlaceTypes.join(","));
+    }
+
+    setSearching(true);
+    setError("");
+    setHasSearched(true);
+    setLastSearchSource("neighborhood");
+    setLastResolvedAddress("");
+    setSearchCenter(null);
+
+    try {
+      const response = await fetch(`/api/food-distributors?${params.toString()}`);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || `Neighborhood search failed (${response.status})`);
+      }
+
+      const rawResults = Array.isArray(data) ? data : [];
+      const scopeFilteredResults = filterResultsByScope(rawResults);
+      const filteredResults = applyPlaceTypeFilter(scopeFilteredResults, activePlaceTypes);
+      const filteredOut = rawResults.length - filteredResults.length;
+
+      searchResultsScopeRef.current = scopeFilteredResults;
+      setSearchResults(filteredResults);
+      clearSearchOverlay();
+      placeMarkers(filteredResults, null, DEFAULT_RADIUS_MILES);
+      focusNeighborhoodOnMap(neighborhoodName);
+      setStatus(tr.viewingNeighborhood(filteredResults.length, neighborhoodName, filteredOut));
+    } catch (err) {
+      searchResultsScopeRef.current = [];
+      setSearchResults([]);
+      setSearchCenter(null);
+      setHasSearched(false);
+      restorePreview();
+      setError(err.message || tr.neighborhoodViewFailed);
+    } finally {
+      setSearching(false);
+    }
+  }, [applyPlaceTypeFilter, clearSearchOverlay, filterResultsByScope, focusNeighborhoodOnMap, placeMarkers, restorePreview, selectedNeighborhood, selectedTypes]);
+
+  useEffect(() => {
+    runNeighborhoodViewRef.current = runNeighborhoodView;
+  }, [runNeighborhoodView]);
+
   function clearSearchState() {
     searchResultsScopeRef.current = [];
     setSearchResults([]);
@@ -1561,6 +1724,13 @@ export default function App() {
   const formatMetric = (value, digits = 2) => {
     if (value == null || Number.isNaN(value)) return "N/A";
     return Number(value).toFixed(digits);
+  };
+
+  const formatTimestamp = (value) => {
+    if (!value) return t.notAvailable;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString();
   };
 
   const neighborhoodPovertyRate = selectedNeighborhood ? incomeMapRef.current.get(selectedNeighborhood) ?? null : null;
@@ -1684,31 +1854,50 @@ export default function App() {
               { value: "restaurant", label: t.filterRestaurants },
               { value: "grocery_store", label: t.filterGroceryStores },
               { value: "food_pantry", label: t.filterFoodPantries },
-            ].map((option) => (
-              <button
-                key={option.value}
-                className={`chip ${
-                  option.value === ""
-                    ? (selectedTypes.length === 0 ? "chip-active" : "")
-                    : (selectedTypes.includes(option.value) ? "chip-active" : "")
-                }`}
-                type="button"
-                onClick={() => {
-                  if (option.value === "") {
-                    setSelectedTypes([]);
-                    return;
-                  }
+            ].map((option) => {
+              const isActive =
+                option.value === ""
+                  ? selectedTypes.length === 0
+                  : selectedTypes.includes(option.value);
+              const typeColor = option.value ? PLACE_TYPE_COLORS[option.value] : null;
 
-                  setSelectedTypes((current) =>
-                    current.includes(option.value)
-                      ? current.filter((value) => value !== option.value)
-                      : [...current, option.value]
-                  );
-                }}
-              >
-                {option.label}
-              </button>
-            ))}
+              let chipStyle = undefined;
+              if (typeColor && isActive) {
+                chipStyle = {
+                  borderColor: typeColor,
+                  background: typeColor,
+                  color: CHIP_ACTIVE_TEXT_COLOR[option.value] || "#ffffff",
+                };
+              } else if (typeColor) {
+                chipStyle = {
+                  borderColor: `${typeColor}66`,
+                  color: typeColor,
+                };
+              }
+
+              return (
+                <button
+                  key={option.value}
+                  className={`chip ${isActive ? "chip-active" : ""}`}
+                  style={chipStyle}
+                  type="button"
+                  onClick={() => {
+                    if (option.value === "") {
+                      setSelectedTypes([]);
+                      return;
+                    }
+
+                    setSelectedTypes((current) =>
+                      current.includes(option.value)
+                        ? current.filter((value) => value !== option.value)
+                        : [...current, option.value]
+                    );
+                  }}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
           </div>
           <div className="meta-row">
             <button className="toggle-all" type="button" onClick={clearAll}>{t.clearAll}</button>
@@ -1761,15 +1950,20 @@ export default function App() {
         </div>
 
         {/* ── Neighborhood Metrics ── */}
+        {/* ── Neighborhood Metrics ── */}
         {(selectedNeighborhood || metricsLoading || metricsError) && (
           <div className="panel-section">
             <section className="dataset">
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <h2>{selectedNeighborhood || t.neighborhoodMetrics}</h2>
-                {neighborhoodMetrics && (
+                {selectedNeighborhood && (
                   <div style={{ display: "flex", gap: "0.4rem" }}>
-                    <button className="charts-btn" onClick={() => setShowChartsModal(true)}>View Charts</button>
-                    <button className="charts-btn" onClick={() => setShowCompareModal(true)}>{t.tabCompare}</button>
+                    {neighborhoodMetrics && (
+                      <button className="charts-btn" onClick={() => setShowChartsModal(true)}>View Charts</button>
+                    )}
+                    {neighborhoodMetrics && (
+                      <button className="charts-btn" onClick={() => setShowCompareModal(true)}>{t.tabCompare}</button>
+                    )}
                   </div>
                 )}
               </div>
@@ -1846,6 +2040,50 @@ export default function App() {
             </div>
           </section>
         )}
+
+        {censusTrust && (
+          <div className="panel-section">
+            <button
+              type="button"
+              className={`census-toggle${showCensusTrust ? " census-toggle-open" : ""}`}
+              onClick={() => setShowCensusTrust((current) => !current)}
+              aria-expanded={showCensusTrust}
+            >
+              <span className="census-toggle-arrow" aria-hidden>{showCensusTrust ? "▾" : "▸"}</span>
+              <span className="census-toggle-label">{t.censusQualityTitle}</span>
+            </button>
+            {showCensusTrust && (
+              <section className="dataset census-dataset">
+                <div className="dataset-list" role="list">
+                  <div className="dataset-item" role="listitem">
+                    <span className="dataset-name">{t.sourceLabel}</span>
+                    <span className="dataset-meta">
+                      {censusTrust.source?.provider || censusTrust.source?.dataset || t.notAvailable}
+                    </span>
+                  </div>
+                  <div className="dataset-item" role="listitem">
+                    <span className="dataset-name">{t.censusRowsLabel}</span>
+                    <span className="dataset-meta">
+                      {censusTrust.tractCount ?? t.notAvailable}
+                      {censusTrust.vintage ? ` · ${censusTrust.vintage}` : ""}
+                    </span>
+                  </div>
+                  <div className="dataset-item" role="listitem">
+                    <span className="dataset-name">{t.lastUpdatedLabel}</span>
+                    <span className="dataset-meta">{formatTimestamp(censusTrust.lastUpdated)}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="census-info-link"
+                  onClick={() => setShowCensusInfoModal(true)}
+                >
+                  {t.additionalInfo}
+                </button>
+              </section>
+            )}
+          </div>
+        )}
         </>}
       </aside>
 
@@ -1869,6 +2107,21 @@ export default function App() {
               <button className="modal-close" onClick={() => setShowCompareModal(false)} aria-label="Close">×</button>
             </div>
             <ComparisonDashboard lang={lang} />
+          </div>
+        </div>
+      )}
+
+      {showCensusInfoModal && (
+        <div className="modal-backdrop" onClick={() => setShowCensusInfoModal(false)}>
+          <div className="modal-card" style={{ maxWidth: "520px" }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">{t.censusInfoTitle}</span>
+              <button className="modal-close" onClick={() => setShowCensusInfoModal(false)} aria-label="Close">×</button>
+            </div>
+            <div className="modal-section">
+              <p className="dataset-caption">{t.censusInfoConfidence}</p>
+              <p className="dataset-caption">{t.censusInfoCompleteness}</p>
+            </div>
           </div>
         </div>
       )}

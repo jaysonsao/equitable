@@ -2,6 +2,7 @@ import os
 import csv
 import re
 from pathlib import Path
+from datetime import datetime
 from pymongo import MongoClient, GEOSPHERE
 
 _client = None
@@ -72,6 +73,14 @@ def _avg(values):
     return (sum(values) / len(values)) if values else None
 
 
+def _iso_or_none(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if value is None:
+        return None
+    return str(value)
+
+
 def _load_citywide_gini_from_csv():
     global _citywide_gini_from_csv
     if _citywide_gini_from_csv is not None:
@@ -103,8 +112,9 @@ def get_db():
         uri = os.environ.get("MONGO_CONNECTION", "")
         if not uri:
             raise RuntimeError("MONGO_CONNECTION not set")
+        db_name = os.environ.get("MONGO_DB", "food-distributors")
         _client = MongoClient(uri)
-        _db = _client["food-distributors"]
+        _db = _client[db_name]
     if not _geo_index_ready:
         # Required for geospatial queries like $near.
         try:
@@ -289,7 +299,7 @@ def get_citywide_food_averages():
     }
 
 
-def get_neighborhood_stats(city="Boston", collection_name="neighborhoods"):
+def get_neighborhood_stats(city="Boston", collection_name="neighborhoods", include_meta=True):
     """
     Return neighborhood display stats in the shape expected by /api/neighborhood-stats:
     [{ name, poverty_rate, gini_index }, ...]
@@ -304,7 +314,17 @@ def get_neighborhood_stats(city="Boston", collection_name="neighborhoods"):
         if city:
             query["city"] = {"$regex": f"^{re.escape(str(city).strip())}$", "$options": "i"}
 
-        projection = {"_id": 0, "name": 1, "gini_index": 1}
+        projection = {
+            "_id": 0,
+            "name": 1,
+            "gini_index": 1,
+            "source": 1,
+            "source_file": 1,
+            "updated_at": 1,
+            "last_updated": 1,
+            "confidence": 1,
+            "completeness": 1,
+        }
         rows = []
         for doc in db[collection_name].find(query, projection):
             name = str(doc.get("name") or "").strip()
@@ -314,13 +334,19 @@ def get_neighborhood_stats(city="Boston", collection_name="neighborhoods"):
 
             # Seed CSV commonly stores percentages (e.g. 23.1). UI expects 0..1.
             normalized = gini_value / 100.0 if gini_value > 1 else gini_value
-            rows.append(
-                {
-                    "name": name,
-                    "poverty_rate": normalized,
-                    "gini_index": gini_value,
-                }
-            )
+            row = {"name": name, "poverty_rate": normalized, "gini_index": gini_value}
+            if include_meta:
+                source = doc.get("source")
+                if not source:
+                    source = {
+                        "provider": "Local seeded neighborhood dataset",
+                        "dataset": doc.get("source_file") or "unknown",
+                    }
+                row["source"] = source
+                row["last_updated"] = _iso_or_none(doc.get("last_updated") or doc.get("updated_at"))
+                row["confidence"] = doc.get("confidence")
+                row["completeness"] = doc.get("completeness")
+            rows.append(row)
 
         rows.sort(key=lambda x: x["name"])
         return rows
@@ -338,12 +364,74 @@ def get_neighborhood_stats(city="Boston", collection_name="neighborhoods"):
                 pop = float(row["total_population"])
                 below_pov = float(row["population_below_poverty"])
                 poverty_rate = round(below_pov / pop, 4) if pop > 0 else 0
-                results.append({"name": row["name"], "poverty_rate": poverty_rate, "gini_index": None})
+                item = {"name": row["name"], "poverty_rate": poverty_rate, "gini_index": None}
+                if include_meta:
+                    item["source"] = {
+                        "provider": "Local fallback CSV",
+                        "dataset": csv_path.name,
+                    }
+                    item["last_updated"] = None
+                    item["confidence"] = None
+                    item["completeness"] = None
+                results.append(item)
             except (ValueError, KeyError):
                 continue
 
     results.sort(key=lambda x: x["name"])
     return results
+
+
+def get_census_geographies(
+    *,
+    level="tract",
+    city_scope="Boston",
+    vintage=None,
+    limit=5000,
+    collection_name="census_geo_profiles",
+):
+    db = get_db()
+    collection_names = set(db.list_collection_names())
+    if collection_name not in collection_names:
+        return []
+
+    if level not in {"tract", "block_group"}:
+        raise ValueError("level must be 'tract' or 'block_group'")
+
+    query = {"geo_level": level}
+    if city_scope:
+        query["city_scope"] = {"$regex": f"^{re.escape(str(city_scope).strip())}$", "$options": "i"}
+    if vintage is not None:
+        query["vintage"] = int(vintage)
+
+    projection = {
+        "_id": 0,
+        "geoid": 1,
+        "geo_level": 1,
+        "name": 1,
+        "state_fips": 1,
+        "county_fips": 1,
+        "tract_code": 1,
+        "block_group_code": 1,
+        "city_scope": 1,
+        "vintage": 1,
+        "metrics": 1,
+        "source": 1,
+        "last_updated": 1,
+        "confidence": 1,
+        "completeness": 1,
+    }
+
+    cursor = db[collection_name].find(query, projection).sort("geoid", 1)
+    if limit is not None:
+        cursor = cursor.limit(int(limit))
+
+    rows = []
+    for doc in cursor:
+        item = dict(doc)
+        item["last_updated"] = _iso_or_none(doc.get("last_updated"))
+        rows.append(item)
+
+    return rows
 
 
 def get_neighborhood_metrics(neighborhood_name):
