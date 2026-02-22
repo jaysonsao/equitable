@@ -1063,6 +1063,33 @@ export default function App() {
     setNeighborhoodStatsExpanded(false);
   };
 
+  const speakNeighborhood = async () => {
+    if (!selectedNeighborhood || !neighborhoodMetrics) return;
+    const m = neighborhoodMetrics;
+    const pov = neighborhoodPovertyRate != null ? `${(neighborhoodPovertyRate * 100).toFixed(1)}%` : "N/A";
+    const pop = m.population != null ? Number(m.population).toLocaleString() : "N/A";
+    const text = langRef.current === "es"
+      ? `${selectedNeighborhood}. Población: ${pop}. Tasa de pobreza: ${pov}. Restaurantes: ${m.counts?.restaurants ?? 0}. Supermercados: ${m.counts?.grocery_stores ?? 0}. Mercados agrícolas: ${m.counts?.farmers_markets ?? 0}. Bancos de alimentos: ${m.counts?.food_pantries ?? 0}.`
+      : `${selectedNeighborhood}. Population: ${pop}. Poverty rate: ${pov}. Restaurants: ${m.counts?.restaurants ?? 0}. Grocery stores: ${m.counts?.grocery_stores ?? 0}. Farmers markets: ${m.counts?.farmers_markets ?? 0}. Food pantries: ${m.counts?.food_pantries ?? 0}.`;
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, lang: langRef.current }),
+      });
+      if (!res.ok) throw new Error("TTS failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.play();
+    } catch {
+      // fallback to browser speech
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.lang = langRef.current === "es" ? "es-US" : "en-US";
+      window.speechSynthesis.speak(utt);
+    }
+  };
+
   if (showSplash) return <SplashScreen onDone={(l) => { setLang(l); setShowSplash(false); }} />;
 
   return (
@@ -1359,6 +1386,7 @@ export default function App() {
                   <div className="map-neighborhood-card-actions">
                     <button className="charts-btn" onClick={() => setShowChartsModal(true)}>View Charts</button>
                     <button className="charts-btn" onClick={() => setShowCompareModal(true)}>{t.tabCompare}</button>
+                    <button className="charts-btn" onClick={speakNeighborhood} title="Read aloud">🔊</button>
                   </div>
                 )}
               </div>

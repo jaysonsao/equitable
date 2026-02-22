@@ -349,6 +349,47 @@ def gemini_ask():
         return jsonify({"error": str(e)}), 503
 
 
+@app.route("/api/tts", methods=["POST"])
+def text_to_speech():
+    api_key = os.environ.get("ELEVENLABS_API_KEY", "")
+    if not api_key:
+        return jsonify({"error": "ElevenLabs API key not configured"}), 503
+
+    body = request.get_json(silent=True) or {}
+    text = str(body.get("text", "")).strip()
+    lang = str(body.get("lang", "en")).strip()
+
+    if not text:
+        return jsonify({"error": "text is required"}), 400
+
+    # Use a different voice for Spanish vs English
+    voice_id = "EXAVITQu4vr4xnSDxMaL" if lang == "es" else "JBFqnCBsd6RMkjVDRZzb"
+
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    payload = json.dumps({
+        "text": text,
+        "model_id": "eleven_multilingual_v2",
+        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+    }).encode("utf-8")
+
+    req_headers = {
+        "xi-api-key": api_key,
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg",
+    }
+
+    try:
+        import urllib.request as urlreq
+        req = urlreq.Request(url, data=payload, headers=req_headers, method="POST")
+        with urlreq.urlopen(req, timeout=15) as resp:
+            audio_data = resp.read()
+        return Response(audio_data, content_type="audio/mpeg")
+    except HTTPError as e:
+        return jsonify({"error": f"ElevenLabs error: {e.code}"}), 502
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
 @app.errorhandler(404)
 def not_found(e):
     if request.path.startswith("/api/"):
