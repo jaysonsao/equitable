@@ -30,10 +30,10 @@ def load_dot_env(filepath: Path) -> dict:
 
 
 dot_env = load_dot_env(ROOT / ".env")
-MONGO_URI = os.environ.get("MONGO_URI") or dot_env.get("MONGO_URI", "")
+MONGO_URI = os.environ.get("MONGO_CONNECTION") or dot_env.get("MONGO_CONNECTION", "")
 
 if not MONGO_URI:
-    raise SystemExit("Error: MONGO_URI not set in .env")
+    raise SystemExit("Error: MONGO_CONNECTION not set in .env")
 
 client = MongoClient(MONGO_URI)
 db = client["equitable"]
@@ -43,16 +43,18 @@ def seed_farmers_markets():
     collection = db["farmers_markets"]
     collection.drop()
     rows = []
+
     with open(ROOT / "data" / "farmers_market.csv", encoding="utf-8") as f:
-        # Skip the first non-header line ("MassGrown Map Export")
-        first = f.readline().strip()
-        if not first.startswith("LocationName"):
-            pass  # already skipped the title row
         reader = csv.DictReader(f)
         for row in reader:
-            rows.append({k.strip(): v.strip() for k, v in row.items()})
+            record = {k.strip(): v.strip() for k, v in row.items()}
+            # lat/lng are already in the CSV as fake coordinates
+            record["lat"] = float(record["lat"]) if record.get("lat") else None
+            record["lng"] = float(record["lng"]) if record.get("lng") else None
+            rows.append(record)
+
     collection.insert_many(rows)
-    print(f"Inserted {len(rows)} farmers market records")
+    print(f"Inserted {len(rows)} farmers market records with lat/lng")
 
 
 def seed_income_inequality():

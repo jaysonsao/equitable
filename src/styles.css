@@ -286,6 +286,149 @@ h1 {
   color: #696156;
 }
 
+/* Search bar */
+.search-box {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.search-input {
+  flex: 1;
+  border: 1px solid var(--edge);
+  border-radius: 9px;
+  padding: 0.52rem 0.65rem;
+  font-size: 0.88rem;
+  background: #fff;
+  color: var(--ink);
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: #0b6e4f;
+  box-shadow: 0 0 0 2px #0b6e4f22;
+}
+
+.search-btn {
+  border: 1px solid #0d6f50;
+  background: linear-gradient(180deg, #0f8a63, #0b6e4f);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.86rem;
+  padding: 0.52rem 0.9rem;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.search-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Type filter chips */
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.chip {
+  border: 1px solid var(--edge);
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #5a5248;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms, color 120ms;
+}
+
+.chip:hover {
+  border-color: #0b6e4f;
+  color: #0b6e4f;
+}
+
+.chip-active {
+  border-color: #0b6e4f;
+  background: #0b6e4f;
+  color: #fff;
+}
+
+/* Neighborhood dropdown + clear row */
+.filter-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.filter-row .control-input {
+  flex: 1;
+}
+
+.clear-btn {
+  border: 1px solid var(--edge);
+  background: #fff;
+  border-radius: 9px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #5a5248;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.clear-btn:hover {
+  border-color: #ad1021;
+  color: #ad1021;
+}
+
+/* Legend row */
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: #5a5248;
+  font-weight: 600;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid #0000001f;
+}
+
+/* Clickable result items */
+.dataset-item-clickable {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: border-color 120ms, transform 120ms;
+}
+
+.dataset-item-clickable:hover {
+  border-color: #0b6e4f;
+  transform: translateY(-1px);
+}
+
+.result-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid #0000001f;
+}
+
+.result-text {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
 .info-window {
   font-size: 0.85rem;
   line-height: 1.3;

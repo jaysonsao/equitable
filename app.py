@@ -51,6 +51,17 @@ def farmers_markets():
         return jsonify({"error": str(e)}), 503
 
 
+@app.route("/api/food-distributors")
+def food_distributors():
+    try:
+        place_type = request.args.get("place_type")
+        neighborhood = request.args.get("neighborhood")
+        search = request.args.get("search")
+        return jsonify(mongo.get_food_distributors(place_type=place_type, neighborhood=neighborhood, search=search))
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+
+
 @app.route("/api/income-inequality")
 def income_inequality():
     try:
