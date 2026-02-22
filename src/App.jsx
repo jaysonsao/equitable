@@ -703,6 +703,7 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [lang, setLang] = useState("en");
   const langRef = useRef("en");
+  const [activeTab, setActiveTab] = useState("map");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const mapTheme = "civic";
