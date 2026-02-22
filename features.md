@@ -2,6 +2,27 @@ Features implemented
 
 ---
 
+## [2026-02-22] — Neighborhood Comparison Modal (teammate integration)
+- Integrated teammate's `ComparisonDashboard` component (originally a sidebar tab) into a modal
+- "Compare" button appears next to "View Charts" in the neighborhood metrics panel header
+- Modal shows two-neighborhood side-by-side comparison: population, poverty rate, Gini, food access counts, per-1k bars
+- `CompareBar` component renders relative horizontal bars colored blue (A) vs amber (B)
+- Dropdown autocomplete from `NEIGHBORHOOD_NAMES` list for both inputs
+- Removed sidebar tab bar; comparison is now fully modal-based
+- Tab/cmp CSS from teammate preserved in `src/styles.css`
+
+## [2026-02-22] — Recharts Data Visualization Modal
+- Installed `recharts` (40 packages)
+- "View Charts" button appears in the neighborhood metrics panel header after clicking a neighborhood
+- Modal opens with 3 visualizations powered by Recharts:
+  1. **Grouped bar chart** — selected neighborhood vs Boston citywide average per 1,000 residents (color-coded by food type, citywide bars in gray)
+  2. **Line chart** — top 20 neighborhoods city-wide comparison across all 4 food types, with a dashed green reference line marking the currently selected neighborhood
+  3. **Gini progress bar** — neighborhood Gini vs citywide average (green = below avg, red = above)
+- New backend: `get_citywide_food_averages()` in `services/mongo.py` — aggregates per-1k counts across all neighborhoods from MongoDB
+- New endpoint: `GET /api/citywide-averages` returns `citywide_avg_per_1000` + `neighborhoods` series
+- Modal styles: `.modal-backdrop`, `.modal-card`, `.modal-header`, `.modal-close`, `.modal-section`, `.modal-section-label`, `.gini-bar-track`, `.gini-bar-fill`, `.gini-bar-labels`
+- Button style: `.charts-btn` (green outlined, fills on hover)
+
 ## [2026-02-22] — Smooth Map Zoom
 - Enabled fractional zoom (`isFractionalZoomEnabled: true`) so zoom interpolates fluidly between levels instead of snapping
 - Added `gestureHandling: "greedy"` so scroll/single-finger gestures respond immediately without modifier keys
@@ -25,9 +46,15 @@ Features implemented
 - Radius search fires automatically using extracted address or neighborhood + geocoding
 - `clearAll()` resets NL query and parsed chips
 
+## [2026-02-22] — Poverty Rate in Metrics Panel (replaces Gini display)
+- Neighborhood metrics panel now shows **Poverty Rate** sourced from the same choropleth layer data (`/api/neighborhood-stats` → `boston_neighborhood_socioeconomic_clean.csv`)
+- Removed Gini Index and Citywide Avg Gini rows from the sidebar panel; replaced with a single "Poverty Rate" row displaying e.g. `27.3%`
+- Rate is read directly from `incomeMapRef` (already in memory from map load) — no extra API call
+- `seed.py` database name corrected from `"equitable"` to `"food-distributors"` to match `services/mongo.py`
+
 ## [2026-02-22] — Neighborhood Metrics Panel
 - Clicking any neighborhood boundary on the map loads metrics from `/api/neighborhood-metrics?name=...`
-- Panel shows: Population, Avg Gini Index, Citywide Avg Gini, counts + per-1k rates for Restaurants / Grocery Stores / Farmers Markets / Food Pantries / Total Access Points
+- Panel shows: Population, Poverty Rate, counts + per-1k rates for Restaurants / Grocery Stores / Farmers Markets / Food Pantries / Total Access Points
 - Metrics panel only renders when a neighborhood is selected (or loading/error state)
 
 ## [2026-02-22 14:00] — Map Blank/Blur Fix

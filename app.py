@@ -1,5 +1,4 @@
 import os
-import csv
 import json
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -40,10 +39,10 @@ for k, v in dot_env.items():
 
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API", "")
 METERS_PER_MILE = 1609.344
-MIN_RADIUS_MILES = 0.5
+MIN_RADIUS_MILES = 0.1
 MAX_RADIUS_MILES = 50
 DEFAULT_RESULT_LIMIT = 250
-MAX_RESULT_LIMIT = 1000
+MAX_RESULT_LIMIT = 2000
 
 
 def _to_float(value, field_name: str) -> float:
@@ -243,19 +242,12 @@ def income_inequality():
 
 @app.route("/api/neighborhood-stats")
 def neighborhood_stats():
-    csv_path = ROOT / "data" / "boston_neighborhood_socioeconomic_clean.csv"
-    results = []
-    with open(csv_path, encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            try:
-                pop = float(row["total_population"])
-                below_pov = float(row["population_below_poverty"])
-                poverty_rate = round(below_pov / pop, 4) if pop > 0 else 0
-                results.append({"name": row["name"], "poverty_rate": poverty_rate})
-            except (ValueError, KeyError):
-                continue
-    return jsonify(results)
+    city = (request.args.get("city") or "Boston").strip() or "Boston"
+    collection_name = (request.args.get("collection") or "neighborhoods").strip() or "neighborhoods"
+    try:
+        return jsonify(mongo.get_neighborhood_stats(city=city, collection_name=collection_name))
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
 
 
 @app.route("/api/neighborhood-metrics")
@@ -266,6 +258,14 @@ def neighborhood_metrics():
 
     try:
         return jsonify(mongo.get_neighborhood_metrics(neighborhood))
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+
+
+@app.route("/api/citywide-averages")
+def citywide_averages():
+    try:
+        return jsonify(mongo.get_citywide_food_averages())
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 503
 
@@ -295,6 +295,20 @@ def gemini_ask():
         return jsonify({"response": answer})
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 503
+
+
+@app.errorhandler(404)
+def not_found(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Not found"}), 404
+    return e
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Internal server error"}), 500
+    return e
 
 
 @app.route("/", defaults={"req_path": ""})

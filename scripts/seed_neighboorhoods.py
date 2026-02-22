@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Seed neighborhood documents into MongoDB collection `neighboorhoods`.
+Seed neighborhood documents into MongoDB collection `neighborhoods`.
 
 Usage:
   python scripts/seed_neighboorhoods.py
@@ -22,9 +22,9 @@ from pymongo import MongoClient
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GEOJSON = ROOT / "data" / "boston_neighborhood_boundaries.geojson"
-DEFAULT_POPULATION_CSV = ROOT / "data" / "cleaned_data" / "population_updated.csv"
 DEFAULT_SOCIO_CSV = ROOT / "data" / "boston_neighborhood_socioeconomic_clean.csv"
-DEFAULT_COLLECTION = "neighboorhoods"
+DEFAULT_COLLECTION = "neighborhoods"
+DEFAULT_SECONDARY_COLLECTION = ""
 FOOD_COLLECTION = "food-distributors"
 
 INCOME_BUCKET_MIDPOINTS = {
@@ -45,6 +45,22 @@ INCOME_BUCKET_MIDPOINTS = {
     "households_income_150k_200k": 175_000,
     "households_income_200k_plus": 225_000,
 }
+
+
+def resolve_default_population_csv() -> Path:
+    candidates = [
+        ROOT / "data" / "cleaned_data" / "population_up.csv",
+        ROOT / "data" / "cleaned_data" / "populated_up.csv",
+        ROOT / "data" / "cleaned_data" / "population_updated.csv",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    # Keep the first preferred path for error messages/CLI defaults when file is missing.
+    return candidates[0]
+
+
+DEFAULT_POPULATION_CSV = resolve_default_population_csv()
 
 
 def load_dot_env(filepath: Path) -> dict[str, str]:
@@ -90,8 +106,8 @@ def to_int_or_none(value) -> int | None:
     return int(round(number))
 
 
-def load_population_rows(path: Path) -> dict[str, tuple[int, str, int | None]]:
-    rows: dict[str, tuple[int, str, int | None]] = {}
+def load_population_rows(path: Path) -> dict[str, tuple[int, str, int | None, float | None]]:
+    rows: dict[str, tuple[int, str, int | None, float | None]] = {}
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         next_id = 1
@@ -102,7 +118,12 @@ def load_population_rows(path: Path) -> dict[str, tuple[int, str, int | None]]:
             key = canonicalize_name(name)
             if key in rows:
                 continue
-            rows[key] = (next_id, name, to_int_or_none(row.get("Population")))
+            rows[key] = (
+                next_id,
+                name,
+                to_int_or_none(row.get("Population")),
+                to_float_or_none(row.get("gini_index")),
+            )
             next_id += 1
     if not rows:
         raise ValueError(f"No neighborhoods found in {path}")
@@ -186,8 +207,18 @@ def build_stats_lookup(collection) -> dict[int, dict[str, int]]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Seed neighboorhoods collection")
+    parser = argparse.ArgumentParser(description="Seed neighborhoods collection")
     parser.add_argument("--collection", default=DEFAULT_COLLECTION, help="Target neighborhoods collection name")
+    parser.add_argument(
+        "--secondary-collection",
+        default=DEFAULT_SECONDARY_COLLECTION,
+        help="Optional secondary neighborhoods collection name (empty means skip secondary write)",
+    )
+    parser.add_argument(
+        "--no-secondary",
+        action="store_true",
+        help="Skip writing to secondary neighborhoods collection",
+    )
     parser.add_argument("--city", default="Boston", help="City name to write on each neighborhood document")
     parser.add_argument("--drop", action="store_true", help="Drop target collection before writing")
     parser.add_argument("--dry-run", action="store_true", help="Build documents but do not write to MongoDB")
@@ -248,7 +279,7 @@ def main() -> None:
         if key not in population_rows:
             continue
 
-        legacy_id, canonical_name, population = population_rows[key]
+        legacy_id, canonical_name, population, gini_index = population_rows[key]
 
         docs.append(
             {
@@ -257,8 +288,7 @@ def main() -> None:
                 "city": args.city,
                 "population": population,
                 "avg_household_income": socioeconomic_income.get(key),
-                # Placeholder for future neighborhood-level inequality ingestion.
-                "gini_index": None,
+                "gini_index": gini_index,
                 "geometry": geometry,
                 "stats": stats_lookup.get(
                     legacy_id,
@@ -311,6 +341,34 @@ def main() -> None:
     target_collection.create_index("neighborhood_id", unique=True)
     target_collection.create_index([("geometry", "2dsphere")])
     print(f"Upserted {upserts} documents into '{args.collection}' in database '{mongo_db_name}'.")
+
+    if not args.no_secondary:
+        secondary_name = args.secondary_collection.strip()
+        if secondary_name:
+            secondary_collection = db[secondary_name]
+            if args.drop and secondary_name != args.collection:
+                secondary_collection.drop()
+                print(f"Dropped collection '{secondary_name}'.")
+
+            secondary_upserts = 0
+            for doc in docs:
+                secondary_doc = {k: v for k, v in doc.items() if k != "gini_index"}
+                secondary_collection.update_one(
+                    {"neighborhood_id": doc["neighborhood_id"]},
+                    {
+                        "$set": secondary_doc,
+                        "$unset": {"gini_index": ""},
+                    },
+                    upsert=True,
+                )
+                secondary_upserts += 1
+
+            secondary_collection.create_index("neighborhood_id", unique=True)
+            secondary_collection.create_index([("geometry", "2dsphere")])
+            print(
+                f"Upserted {secondary_upserts} documents into '{secondary_name}' "
+                f"in database '{mongo_db_name}'."
+            )
 
 
 if __name__ == "__main__":

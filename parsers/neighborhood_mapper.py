@@ -12,7 +12,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-DEFAULT_POPULATION_CSV = Path("data/cleaned_data/population_updated.csv")
+def _resolve_default_population_csv() -> Path:
+    candidates = [
+        Path("data/cleaned_data/population_up.csv"),
+        Path("data/cleaned_data/populated_up.csv"),
+        Path("data/cleaned_data/population_updated.csv"),
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
+
+
+DEFAULT_POPULATION_CSV = _resolve_default_population_csv()
 DEFAULT_NEIGHBORHOODS_GEOJSON = Path("data/boston_neighborhood_boundaries.geojson")
 
 

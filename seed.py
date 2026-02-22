@@ -36,7 +36,7 @@ if not MONGO_URI:
     raise SystemExit("Error: MONGO_CONNECTION not set in .env")
 
 client = MongoClient(MONGO_URI)
-db = client["equitable"]
+db = client["food-distributors"]
 
 
 def seed_farmers_markets():

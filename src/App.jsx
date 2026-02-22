@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  LineChart, Line, Legend, CartesianGrid, ReferenceLine,
+} from "recharts";
 
 function SplashScreen({ onDone }) {
   const [showButtons, setShowButtons] = useState(false);
@@ -171,6 +175,12 @@ const MAP_THEME_STYLES = {
   ],
 };
 
+const BOSTON_FALLBACK_BOUNDS = {
+  north: 42.431,
+  south: 42.228,
+  east: -70.986,
+  west: -71.191,
+};
 const MASSACHUSETTS_BOUNDS = {
   north: 42.88679,
   south: 41.18705,
@@ -182,9 +192,17 @@ const NEIGHBORHOOD_NAMES = [
   "Allston","Back Bay","Beacon Hill","Brighton","Charlestown","Chinatown",
   "Dorchester","Downtown","East Boston","Fenway","Hyde Park","Jamaica Plain",
   "Mattapan","Mission Hill","North End","Roslindale","Roxbury","South Boston",
-  "South End","West End","West Roxbury","Whittier Street","Longwood",
-  "Harbor Islands","East Boston",
+  "South End","West End","West Roxbury","Whittier Street","Longwood","East Boston",
 ];
+const EXCLUDED_SEARCH_NEIGHBORHOODS = new Set(["harbor islands"]);
+
+function normalizeNeighborhood(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isExcludedNeighborhoodForSearch(value) {
+  return EXCLUDED_SEARCH_NEIGHBORHOODS.has(normalizeNeighborhood(value));
+}
 
 function CompareBar({ label, valueA, valueB, format = (v) => (v ?? 0).toFixed(1) }) {
   const max = Math.max(valueA || 0, valueB || 0, 0.001);
@@ -411,10 +429,36 @@ function giniToColor(t) {
   return `rgb(${r},${g},${b})`;
 }
 
+function darkenColor(color, amount = 0.12) {
+  if (typeof color !== "string") return color;
+
+  const clamp = (value) => Math.max(0, Math.min(255, Math.round(value)));
+  const scale = 1 - amount;
+
+  const rgbMatch = color.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+  if (rgbMatch) {
+    const r = clamp(Number(rgbMatch[1]) * scale);
+    const g = clamp(Number(rgbMatch[2]) * scale);
+    const b = clamp(Number(rgbMatch[3]) * scale);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  const hexMatch = color.match(/^#([0-9a-f]{6})$/i);
+  if (hexMatch) {
+    const hex = hexMatch[1];
+    const r = clamp(parseInt(hex.slice(0, 2), 16) * scale);
+    const g = clamp(parseInt(hex.slice(2, 4), 16) * scale);
+    const b = clamp(parseInt(hex.slice(4, 6), 16) * scale);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  return color;
+}
+
 const GOOGLE_MAPS_API_KEY =
   typeof __GOOGLE_MAPS_API__ === "string" ? __GOOGLE_MAPS_API__.trim() : "";
 
-const MIN_RADIUS_MILES = 0.5;
+const MIN_RADIUS_MILES = 0.1;
 const DEFAULT_RADIUS_MILES = 0.5;
 const DEFAULT_LIMIT = 350;
 const PREVIEW_SAMPLE_PCT = 0.1;
@@ -501,6 +545,130 @@ function buildMarkerIcon(placeType) {
   };
 }
 
+const CHART_ITEMS = [
+  { key: "restaurants",    label: "Restaurants",    color: "#10B981" },
+  { key: "grocery_stores", label: "Grocery",        color: "#3B82F6" },
+  { key: "farmers_markets",label: "Markets",        color: "#F59E0B" },
+  { key: "food_pantries",  label: "Pantries",       color: "#1a1917" },
+];
+
+function NeighborhoodChartsModal({ neighborhood, metrics, onClose }) {
+  const [citywide, setCitywide] = useState(null);
+  const [cwLoading, setCwLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/citywide-averages")
+      .then((r) => r.json())
+      .then((d) => setCitywide(d))
+      .catch(() => setCitywide(null))
+      .finally(() => setCwLoading(false));
+  }, []);
+
+  const per1k = metrics.per_1000 ?? {};
+  const giniNeighborhood = metrics.income?.avg_gini_for_neighborhood;
+  const giniCitywide     = metrics.income?.avg_gini_citywide;
+  const giniAbove = giniNeighborhood != null && giniCitywide != null && giniNeighborhood > giniCitywide;
+  const giniPct   = giniNeighborhood != null ? Math.min(giniNeighborhood / 0.7, 1) * 100 : null;
+
+  // Grouped bar: neighborhood vs citywide per-1k
+  const cwAvg = citywide?.citywide_avg_per_1000 ?? {};
+  const groupedData = CHART_ITEMS.map((item) => ({
+    name: item.label,
+    neighborhood: Number((per1k[item.key] ?? 0).toFixed(2)),
+    citywide: Number((cwAvg[item.key] ?? 0).toFixed(2)),
+    color: item.color,
+  }));
+
+  // Line chart: all neighborhoods' per-1k by food type (top 20 by total)
+  const lineData = (citywide?.neighborhoods ?? []).slice(0, 20).map((n) => ({
+    name: n.neighborhood.length > 12 ? n.neighborhood.slice(0, 11) + "…" : n.neighborhood,
+    Restaurants: n.restaurant ?? 0,
+    Grocery: n.grocery_store ?? 0,
+    Markets: n.farmers_market ?? 0,
+    Pantries: n.food_pantry ?? 0,
+    _isSelected: n.neighborhood.toLowerCase() === neighborhood.toLowerCase(),
+  }));
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-title">{neighborhood} — Food Access Charts</span>
+          <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
+        </div>
+
+        {/* ── Grouped bar: neighborhood vs citywide ── */}
+        <div className="modal-section">
+          <p className="modal-section-label">Food Access — Neighborhood vs Boston Avg (per 1,000 residents)</p>
+          {cwLoading ? (
+            <p style={{ fontSize: "0.78rem", color: "#6b6560", fontStyle: "italic" }}>Loading citywide data…</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={groupedData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2ddd6" />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(v, name) => [v, name === "neighborhood" ? neighborhood : "Boston Avg"]} />
+                <Legend formatter={(v) => v === "neighborhood" ? neighborhood : "Boston Avg"} wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="neighborhood" radius={[3, 3, 0, 0]}>
+                  {groupedData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                </Bar>
+                <Bar dataKey="citywide" fill="#d1c9be" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* ── Line chart: all neighborhoods comparison ── */}
+        {!cwLoading && lineData.length > 0 && (
+          <div className="modal-section">
+            <p className="modal-section-label">City-wide Comparison — Per 1,000 Residents (top 20 neighborhoods)</p>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={lineData} margin={{ top: 4, right: 8, left: -16, bottom: 40 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2ddd6" />
+                <XAxis dataKey="name" tick={{ fontSize: 9 }} angle={-40} textAnchor="end" interval={0} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Line type="monotone" dataKey="Restaurants" stroke="#10B981" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey="Grocery"     stroke="#3B82F6" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey="Markets"     stroke="#F59E0B" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey="Pantries"    stroke="#1a1917" dot={false} strokeWidth={2} />
+                {lineData.findIndex((d) => d._isSelected) >= 0 && (
+                  <ReferenceLine
+                    x={lineData.find((d) => d._isSelected)?.name}
+                    stroke="#0b6e4f"
+                    strokeWidth={2}
+                    strokeDasharray="4 2"
+                    label={{ value: "← here", position: "top", fontSize: 9, fill: "#0b6e4f" }}
+                  />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* ── Gini bar ── */}
+        {giniPct != null && (
+          <div className="modal-section">
+            <p className="modal-section-label">Income Inequality (Gini Index)</p>
+            <div className="gini-bar-track">
+              <div
+                className="gini-bar-fill"
+                style={{ width: `${giniPct}%`, background: giniAbove ? "#b5001f" : "#0b6e4f" }}
+              />
+            </div>
+            <div className="gini-bar-labels">
+              <span>{neighborhood}: {giniNeighborhood?.toFixed(3)}</span>
+              {giniCitywide != null && <span>Citywide avg: {giniCitywide?.toFixed(3)}</span>}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const mapElRef = useRef(null);
   const mapRef = useRef(null);
@@ -514,6 +682,10 @@ export default function App() {
   const pinMarkerRef = useRef(null);
   const centerMarkerRef = useRef(null);
   const radiusCircleRef = useRef(null);
+  const hoveredNeighborhoodRef = useRef("");
+  const runAreaSearchAtRef = useRef(async () => {});
+  const openAreaSearchPromptRef = useRef(() => {});
+  const lastFeatureClickTsRef = useRef(0);
 
   const [showSplash, setShowSplash] = useState(true);
   const [lang, setLang] = useState("en");
@@ -543,14 +715,17 @@ export default function App() {
   const [neighborhoodMetrics, setNeighborhoodMetrics] = useState(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [metricsError, setMetricsError] = useState("");
-  const [activeTab, setActiveTab] = useState("map");
+  const [showChartsModal, setShowChartsModal] = useState(false);
+  const [showCompareModal, setShowCompareModal] = useState(false);
 
   const applyMapViewportSettings = useCallback((scope, theme, fitToScope = false) => {
     const map = mapRef.current;
     if (!map) return;
 
     const scopeBounds =
-      scope === "massachusetts" ? MASSACHUSETTS_BOUNDS : bostonBoundsRef.current || MASSACHUSETTS_BOUNDS;
+      scope === "massachusetts"
+        ? MASSACHUSETTS_BOUNDS
+        : (bostonBoundsRef.current || BOSTON_FALLBACK_BOUNDS);
 
     map.setOptions({
       styles: getMapStyles(theme),
@@ -584,13 +759,19 @@ export default function App() {
         fillOpacity = 0.7;
       }
 
+      const isHovered = hoveredNeighborhoodRef.current === name;
+      if (isHovered) {
+        fillColor = darkenColor(fillColor, 0.14);
+        fillOpacity = Math.min(0.9, fillOpacity + 0.12);
+      }
+
       return {
         clickable: true,
         fillColor,
         fillOpacity,
-        strokeColor: "#555",
-        strokeOpacity: 0.5,
-        strokeWeight: 1,
+        strokeColor: isHovered ? "#2f2f2f" : "#555",
+        strokeOpacity: isHovered ? 0.85 : 0.5,
+        strokeWeight: isHovered ? 1.6 : 1,
       };
     });
   }, []);
@@ -613,9 +794,8 @@ export default function App() {
 
   const renderSearchOverlay = useCallback((center, radiusInMiles) => {
     const map = mapRef.current;
-    if (!map || !center) return;
-
     clearSearchOverlay();
+    if (!map || !center) return;
 
     centerMarkerRef.current = new window.google.maps.Marker({
       map,
@@ -643,14 +823,23 @@ export default function App() {
     });
   }, [clearSearchOverlay]);
 
-  const filterResultsToBoston = useCallback((results) => {
+  const filterResultsByScope = useCallback((results) => {
     if (!Array.isArray(results)) return [];
+
+    if (mapScope === "massachusetts") {
+      return results.filter((item) => {
+        if (item.lat == null || item.lng == null) return false;
+        if (isExcludedNeighborhoodForSearch(item.neighborhood)) return false;
+        return true;
+      });
+    }
 
     const bounds = bostonBoundsRef.current;
     const knownNeighborhoods = neighborhoodNamesRef.current;
 
     return results.filter((item) => {
       if (item.lat == null || item.lng == null) return false;
+      if (isExcludedNeighborhoodForSearch(item.neighborhood)) return false;
 
       if (bounds) {
         const inBounds =
@@ -665,7 +854,7 @@ export default function App() {
       const neighborhood = String(item.neighborhood || "").trim();
       return neighborhood ? knownNeighborhoods.has(neighborhood) : false;
     });
-  }, []);
+  }, [mapScope]);
 
   const placeMarkers = useCallback((results, center, radiusInMiles) => {
     const map = mapRef.current;
@@ -737,9 +926,114 @@ export default function App() {
     }
   }, [clearResultMarkers, clearSearchOverlay, placeMarkers, previewResults]);
 
+  const getFocusedSearchRadiusMiles = useCallback(() => {
+    const parsed = Number.parseFloat(radiusMiles);
+    if (!Number.isFinite(parsed) || parsed < MIN_RADIUS_MILES) {
+      return DEFAULT_RADIUS_MILES;
+    }
+    return parsed;
+  }, [radiusMiles]);
+
+  const runAreaSearchAt = useCallback(async (pin, areaLabel = "this area") => {
+    if (!pin) return;
+
+    const radius = getFocusedSearchRadiusMiles();
+    const payload = {
+      pin,
+      radius_miles: radius,
+      limit: DEFAULT_LIMIT,
+    };
+    if (selectedType) payload.place_type = selectedType;
+
+    setDroppedPin(pin);
+    setSearching(true);
+    setError("");
+    setHasSearched(true);
+    setLastSearchSource("pin");
+    setLastResolvedAddress("");
+
+    try {
+      const response = await fetch("/api/food-distributors/search-radius", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || `Search failed (${response.status})`);
+      }
+
+      const rawResults = Array.isArray(data.results) ? data.results : [];
+      const filteredResults = filterResultsByScope(rawResults);
+      const filteredOut = rawResults.length - filteredResults.length;
+
+      setSearchResults(filteredResults);
+      setSearchCenter(data.search_center || pin);
+      placeMarkers(filteredResults, data.search_center || pin, radius);
+      setStatus(
+        `Found ${filteredResults.length} location(s) near ${areaLabel} (area search: ${radius} miles).${
+          filteredOut > 0 ? ` ${filteredOut} outside current scope hidden.` : ""
+        }`
+      );
+    } catch (err) {
+      setSearchResults([]);
+      setSearchCenter(null);
+      setHasSearched(false);
+      restorePreview();
+      setError(err.message || "Search failed");
+    } finally {
+      setSearching(false);
+    }
+  }, [filterResultsByScope, getFocusedSearchRadiusMiles, placeMarkers, restorePreview, selectedType]);
+
+  const openAreaSearchPrompt = useCallback((latLng, areaLabel = "this area") => {
+    const map = mapRef.current;
+    if (!map || !latLng || !infoWindowRef.current) return;
+
+    const radius = getFocusedSearchRadiusMiles();
+    const wrapper = document.createElement("div");
+    wrapper.className = "info-window";
+
+    const title = document.createElement("strong");
+    title.textContent = areaLabel;
+
+    const hint = document.createElement("div");
+    hint.className = "info-window-muted";
+    hint.textContent = `Run a focused ${radius}-mile search around this point (uses current Radius value).`;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "info-window-search-btn";
+    button.textContent = "Search this area";
+    button.disabled = searching;
+    button.addEventListener("click", () => {
+      runAreaSearchAtRef.current(
+        { lat: latLng.lat(), lng: latLng.lng() },
+        areaLabel
+      );
+      infoWindowRef.current?.close();
+    });
+
+    wrapper.appendChild(title);
+    wrapper.appendChild(hint);
+    wrapper.appendChild(button);
+
+    infoWindowRef.current.setPosition(latLng);
+    infoWindowRef.current.setContent(wrapper);
+    infoWindowRef.current.open(map);
+  }, [getFocusedSearchRadiusMiles, searching]);
+
+  useEffect(() => {
+    runAreaSearchAtRef.current = runAreaSearchAt;
+  }, [runAreaSearchAt]);
+
+  useEffect(() => {
+    openAreaSearchPromptRef.current = openAreaSearchPrompt;
+  }, [openAreaSearchPrompt]);
+
   useEffect(() => {
     applyMapViewportSettings(mapScope, mapTheme, false);
-  }, [mapTheme, mapScope, applyMapViewportSettings]);
+  }, [mapScope, mapTheme, applyMapViewportSettings]);
 
   useEffect(() => {
     if (showSplash) return;
@@ -797,7 +1091,10 @@ export default function App() {
         const bounds = new window.google.maps.LatLngBounds();
         const names = new Set();
         map.data.forEach((feature) => {
-          names.add(getNeighborhoodName(feature));
+          const featureName = getNeighborhoodName(feature);
+          if (!isExcludedNeighborhoodForSearch(featureName)) {
+            names.add(featureName);
+          }
           const geometry = feature.getGeometry();
           if (geometry) extendBoundsFromGeometry(bounds, geometry);
         });
@@ -811,21 +1108,34 @@ export default function App() {
         setTimeout(() => window.google.maps.event.trigger(map, "resize"), 100);
 
         map.data.addListener("click", async (event) => {
+          lastFeatureClickTsRef.current = Date.now();
           const name = getNeighborhoodName(event.feature);
+          if (isExcludedNeighborhoodForSearch(name)) {
+            setDroppedPin(null);
+            setSelectedNeighborhood(name);
+            setNeighborhoodMetrics(null);
+            setMetricsError("");
+            setMetricsLoading(false);
+            setStatus(`${name} has no locations and is excluded from search.`);
+            infoWindowRef.current?.close();
+            return;
+          }
+
           const nextPin = { lat: event.latLng.lat(), lng: event.latLng.lng() };
           setDroppedPin(nextPin);
           setSelectedNeighborhood(name);
           setMetricsError("");
           setMetricsLoading(true);
+          openAreaSearchPromptRef.current(event.latLng, name);
 
           try {
             const metricsResponse = await fetch(
               `/api/neighborhood-metrics?name=${encodeURIComponent(name)}`
             );
-            const metricsData = await metricsResponse.json();
             if (!metricsResponse.ok) {
-              throw new Error(metricsData?.error || `Neighborhood metrics failed (${metricsResponse.status})`);
+              throw new Error(`Neighborhood metrics failed (${metricsResponse.status})`);
             }
+            const metricsData = await metricsResponse.json();
             if (!active) return;
             setNeighborhoodMetrics(metricsData);
           } catch (err) {
@@ -836,16 +1146,23 @@ export default function App() {
             if (active) setMetricsLoading(false);
           }
 
-          const content = document.createElement("strong");
-          content.textContent = `${name} (pin set)`;
-          infoWindowRef.current.setPosition(event.latLng);
-          infoWindowRef.current.setContent(content);
-          infoWindowRef.current.open(map);
+        });
+
+        map.data.addListener("mouseover", (event) => {
+          hoveredNeighborhoodRef.current = getNeighborhoodName(event.feature);
+          refreshBoundaryStyles();
+        });
+
+        map.data.addListener("mouseout", () => {
+          hoveredNeighborhoodRef.current = "";
+          refreshBoundaryStyles();
         });
 
         map.addListener("click", (event) => {
+          if (Date.now() - lastFeatureClickTsRef.current < 120) return;
           const nextPin = { lat: event.latLng.lat(), lng: event.latLng.lng() };
           setDroppedPin(nextPin);
+          openAreaSearchPromptRef.current(event.latLng, "Selected area");
         });
 
         setStatus(t.loadingSampled);
@@ -857,7 +1174,7 @@ export default function App() {
         if (!active) return;
 
         const previewRaw = Array.isArray(previewData) ? previewData : [];
-        const previewFiltered = filterResultsToBoston(previewRaw);
+        const previewFiltered = filterResultsByScope(previewRaw);
         const filteredOut = previewRaw.length - previewFiltered.length;
 
         setPreviewResults(previewFiltered);
@@ -889,9 +1206,8 @@ export default function App() {
     applyMapViewportSettings,
     clearResultMarkers,
     clearSearchOverlay,
-    mapScope,
     mapTheme,
-    filterResultsToBoston,
+    filterResultsByScope,
     placeMarkers,
     refreshBoundaryStyles,
     showSplash,
@@ -979,7 +1295,7 @@ export default function App() {
         throw new Error(data?.error || `Search failed (${response.status})`);
       }
       const rawResults = data.results || [];
-      const filteredResults = filterResultsToBoston(rawResults);
+      const filteredResults = filterResultsByScope(rawResults);
       const filteredOut = rawResults.length - filteredResults.length;
 
       setSearchResults(filteredResults);
@@ -1021,8 +1337,8 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: nlQuery }),
       });
+      if (!res.ok) throw new Error(`Gemini parse failed (${res.status})`);
       const intent = await res.json();
-      if (!res.ok) throw new Error(intent?.error || "Gemini parse failed");
       setParsedIntent(intent);
       // Apply extracted place_type as the active filter chip
       if (intent.place_type) setSelectedType(intent.place_type);
@@ -1055,15 +1371,20 @@ export default function App() {
     clearSearchState();
   }
 
+  function clearPinAndRadius() {
+    setDroppedPin(null);
+    clearSearchOverlay();
+    clearSearchState();
+    infoWindowRef.current?.close();
+  }
+
   const formatMetric = (value, digits = 2) => {
     if (value == null || Number.isNaN(value)) return "N/A";
     return Number(value).toFixed(digits);
   };
 
-  const neighborhoodGini = neighborhoodMetrics?.income?.avg_gini_for_neighborhood;
-  const citywideGini = neighborhoodMetrics?.income?.avg_gini_citywide;
-  const displayGini = neighborhoodGini;
-  const giniSourceLabel = neighborhoodGini != null ? "neighborhood" : "";
+  const neighborhoodPovertyRate = selectedNeighborhood ? incomeMapRef.current.get(selectedNeighborhood) ?? null : null;
+  const hasPinOrRadiusOnMap = Boolean(droppedPin || searchCenter);
 
   const shownCount = hasSearched ? searchResults.length : previewResults.length;
 
@@ -1155,6 +1476,11 @@ export default function App() {
             <button className="pin-search-btn" type="button" disabled={searching} onClick={() => runRadiusSearch("pin")}>
               {t.searchPinBtn}
             </button>
+            {hasPinOrRadiusOnMap && (
+              <button className="pin-cancel-btn" type="button" disabled={searching} onClick={clearPinAndRadius}>
+                Cancel
+              </button>
+            )}
           </div>
           <div className="radius-row">
             <span className="radius-label">{t.radiusMiles}</span>
@@ -1162,7 +1488,7 @@ export default function App() {
               className="control-input"
               type="number"
               min={MIN_RADIUS_MILES}
-              step="0.5"
+              step="0.1"
               value={radiusMiles}
               onChange={(event) => setRadiusMiles(event.target.value)}
             />
@@ -1243,7 +1569,15 @@ export default function App() {
         {(selectedNeighborhood || metricsLoading || metricsError) && (
           <div className="panel-section">
             <section className="dataset">
-              <h2>{selectedNeighborhood || t.neighborhoodMetrics}</h2>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <h2>{selectedNeighborhood || t.neighborhoodMetrics}</h2>
+                {neighborhoodMetrics && (
+                  <div style={{ display: "flex", gap: "0.4rem" }}>
+                    <button className="charts-btn" onClick={() => setShowChartsModal(true)}>View Charts</button>
+                    <button className="charts-btn" onClick={() => setShowCompareModal(true)}>{t.tabCompare}</button>
+                  </div>
+                )}
+              </div>
               {metricsLoading && <p className="dataset-caption">{t.compareBtnBusy}</p>}
               {metricsError && <p className="dataset-caption">{metricsError}</p>}
               {!metricsLoading && neighborhoodMetrics && (
@@ -1255,15 +1589,11 @@ export default function App() {
                     </span>
                   </div>
                   <div className="dataset-item" role="listitem">
-                    <span className="dataset-name">{t.avgGiniIndex}</span>
-                    <span className="dataset-meta">{formatMetric(displayGini)}{giniSourceLabel ? ` (${giniSourceLabel})` : ""}</span>
+                    <span className="dataset-name">{t.povertyRate}</span>
+                    <span className="dataset-meta">
+                      {neighborhoodPovertyRate != null ? `${(neighborhoodPovertyRate * 100).toFixed(1)}%` : "N/A"}
+                    </span>
                   </div>
-                  {citywideGini != null && (
-                    <div className="dataset-item" role="listitem">
-                      <span className="dataset-name">{t.citywideAvgGini}</span>
-                      <span className="dataset-meta">{formatMetric(citywideGini)}</span>
-                    </div>
-                  )}
                   {[
                     [t.restaurants, "restaurants"],
                     [t.groceryStores, "grocery_stores"],
@@ -1327,6 +1657,26 @@ export default function App() {
       <main className="map-wrap">
         <div ref={mapElRef} className="map" aria-label="Boston neighborhood map" />
       </main>
+
+      {showChartsModal && neighborhoodMetrics && (
+        <NeighborhoodChartsModal
+          neighborhood={selectedNeighborhood}
+          metrics={neighborhoodMetrics}
+          onClose={() => setShowChartsModal(false)}
+        />
+      )}
+
+      {showCompareModal && (
+        <div className="modal-backdrop" onClick={() => setShowCompareModal(false)}>
+          <div className="modal-card" style={{ maxWidth: "700px" }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Compare Neighborhoods</span>
+              <button className="modal-close" onClick={() => setShowCompareModal(false)} aria-label="Close">×</button>
+            </div>
+            <ComparisonDashboard lang={lang} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
