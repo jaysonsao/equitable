@@ -701,6 +701,112 @@ select.control-input {
 .map-wrap { position: relative; }
 .map { width: 100%; height: 100%; }
 
+.map-neighborhood-card {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: min(390px, calc(100% - 32px));
+  max-height: min(52vh, 460px);
+  overflow: auto;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
+  padding: 0.8rem 0.85rem;
+  z-index: 5;
+}
+
+.map-neighborhood-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.55rem;
+}
+
+.map-neighborhood-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.map-neighborhood-card-header h3 {
+  margin: 0;
+  font-family: "Fraunces", serif;
+  font-size: 0.97rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.map-neighborhood-card-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.map-card-icon-btn {
+  border: 1px solid var(--edge);
+  background: var(--paper);
+  color: var(--ink-soft);
+  border-radius: 6px;
+  min-width: 24px;
+  height: 24px;
+  font-size: 0.82rem;
+  line-height: 1;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 140ms, color 140ms, background 140ms;
+}
+
+.map-card-icon-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #fff;
+}
+
+.map-neighborhood-card-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0;
+}
+
+.map-neighborhood-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.map-neighborhood-card-expand-btn {
+  border: 1px solid var(--edge);
+  background: var(--bg);
+  color: var(--ink-soft);
+  border-radius: 7px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.28rem 0.52rem;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: border-color 140ms, color 140ms, background 140ms;
+}
+
+.map-neighborhood-card-expand-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #fff;
+}
+
+.map-neighborhood-card-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
 /* ── Tab bar ────────────────────────────────────────────── */
 .tab-bar {
   display: flex;
@@ -1077,4 +1183,11 @@ select.control-input {
     border-bottom: 1px solid var(--edge);
   }
   .dataset-list { max-height: 18vh; }
+  .map-neighborhood-card {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    width: auto;
+    max-height: 46vh;
+  }
 }

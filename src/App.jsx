@@ -60,6 +60,9 @@ const TRANSLATIONS = {
     legendFarmersMarket: "Farmers Market", legendRestaurant: "Restaurant",
     legendGrocery: "Grocery", legendFoodPantry: "Food Pantry",
     neighborhoodMetrics: "Neighborhood Metrics",
+    closeCard: "Close card",
+    showMoreStats: "Show more stats",
+    hideMoreStats: "Hide more stats",
     population: "Population", avgGiniIndex: "Avg Gini Index",
     citywideAvgGini: "Citywide Avg Gini",
     restaurants: "Restaurants", groceryStores: "Grocery Stores",
@@ -132,6 +135,9 @@ const TRANSLATIONS = {
     legendFarmersMarket: "Mercado Agrícola", legendRestaurant: "Restaurante",
     legendGrocery: "Supermercado", legendFoodPantry: "Banco de Alimentos",
     neighborhoodMetrics: "Métricas del Vecindario",
+    closeCard: "Cerrar tarjeta",
+    showMoreStats: "Mostrar mas metricas",
+    hideMoreStats: "Ocultar metricas extra",
     population: "Población", avgGiniIndex: "Índice Gini Promedio",
     citywideAvgGini: "Gini Promedio Ciudad",
     restaurants: "Restaurantes", groceryStores: "Supermercados",
@@ -807,6 +813,7 @@ export default function App() {
   const [metricsError, setMetricsError] = useState("");
   const [showChartsModal, setShowChartsModal] = useState(false);
   const [showCompareModal, setShowCompareModal] = useState(false);
+  const [neighborhoodStatsExpanded, setNeighborhoodStatsExpanded] = useState(false);
 
   const applyMapViewportSettings = useCallback((scope, theme, fitToScope = false) => {
     const map = mapRef.current;
@@ -1741,6 +1748,19 @@ export default function App() {
   const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
   langRef.current = lang;
 
+  useEffect(() => {
+    if (!selectedNeighborhood) return;
+    setNeighborhoodStatsExpanded(false);
+  }, [selectedNeighborhood]);
+
+  const closeNeighborhoodCard = () => {
+    setSelectedNeighborhood("");
+    setNeighborhoodMetrics(null);
+    setMetricsLoading(false);
+    setMetricsError("");
+    setNeighborhoodStatsExpanded(false);
+  };
+
   if (showSplash) return <SplashScreen onDone={(l) => { setLang(l); setShowSplash(false); }} />;
 
   return (
@@ -1949,61 +1969,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* ── Neighborhood Metrics ── */}
-        {/* ── Neighborhood Metrics ── */}
-        {(selectedNeighborhood || metricsLoading || metricsError) && (
-          <div className="panel-section">
-            <section className="dataset">
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <h2>{selectedNeighborhood || t.neighborhoodMetrics}</h2>
-                {selectedNeighborhood && (
-                  <div style={{ display: "flex", gap: "0.4rem" }}>
-                    {neighborhoodMetrics && (
-                      <button className="charts-btn" onClick={() => setShowChartsModal(true)}>View Charts</button>
-                    )}
-                    {neighborhoodMetrics && (
-                      <button className="charts-btn" onClick={() => setShowCompareModal(true)}>{t.tabCompare}</button>
-                    )}
-                  </div>
-                )}
-              </div>
-              {metricsLoading && <p className="dataset-caption">{t.compareBtnBusy}</p>}
-              {metricsError && <p className="dataset-caption">{metricsError}</p>}
-              {!metricsLoading && neighborhoodMetrics && (
-                <div className="dataset-list" role="list">
-                  <div className="dataset-item" role="listitem">
-                    <span className="dataset-name">{t.population}</span>
-                    <span className="dataset-meta">
-                      {neighborhoodMetrics.population != null ? Number(neighborhoodMetrics.population).toLocaleString() : "N/A"}
-                    </span>
-                  </div>
-                  <div className="dataset-item" role="listitem">
-                    <span className="dataset-name">{t.povertyRate}</span>
-                    <span className="dataset-meta">
-                      {neighborhoodPovertyRate != null ? `${(neighborhoodPovertyRate * 100).toFixed(1)}%` : "N/A"}
-                    </span>
-                  </div>
-                  {[
-                    [t.restaurants, "restaurants"],
-                    [t.groceryStores, "grocery_stores"],
-                    [t.farmersMarkets, "farmers_markets"],
-                    [t.foodPantries, "food_pantries"],
-                    [t.totalAccessPoints, "access_points"],
-                  ].map(([label, key]) => (
-                    <div className="dataset-item" role="listitem" key={key}>
-                      <span className="dataset-name">{label}</span>
-                      <span className="dataset-meta">
-                        {neighborhoodMetrics.counts?.[key] ?? neighborhoodMetrics.totals?.[key] ?? 0}
-                        {" · "}{t.per1k} {formatMetric(neighborhoodMetrics.per_1000?.[key])}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
-        )}
-
         {hasSearched && (
           <section className="dataset">
             <h2>{t.inRadius}</h2>
@@ -2089,6 +2054,78 @@ export default function App() {
 
       <main className="map-wrap">
         <div ref={mapElRef} className="map" aria-label="Boston neighborhood map" />
+        {(selectedNeighborhood || metricsLoading || metricsError) && (
+          <section className="map-neighborhood-card" aria-label="Selected neighborhood statistics">
+            <div className="map-neighborhood-card-header">
+              <div className="map-neighborhood-card-title-row">
+                <h3>{selectedNeighborhood || t.neighborhoodMetrics}</h3>
+                {neighborhoodMetrics && (
+                  <div className="map-neighborhood-card-actions">
+                    <button className="charts-btn" onClick={() => setShowChartsModal(true)}>View Charts</button>
+                    <button className="charts-btn" onClick={() => setShowCompareModal(true)}>{t.tabCompare}</button>
+                  </div>
+                )}
+              </div>
+              <div className="map-neighborhood-card-header-controls">
+                <button
+                  type="button"
+                  className="map-card-icon-btn"
+                  aria-label={t.closeCard}
+                  title={t.closeCard}
+                  onClick={closeNeighborhoodCard}
+                >
+                  x
+                </button>
+              </div>
+            </div>
+
+            {metricsLoading && <p className="dataset-caption">{t.compareBtnBusy}</p>}
+            {metricsError && <p className="dataset-caption">{metricsError}</p>}
+
+            {!metricsLoading && neighborhoodMetrics && (
+              <div className="map-neighborhood-card-body">
+                <div className="dataset-item" role="listitem">
+                  <span className="dataset-name">{t.population}</span>
+                  <span className="dataset-meta">
+                    {neighborhoodMetrics.population != null ? Number(neighborhoodMetrics.population).toLocaleString() : "N/A"}
+                  </span>
+                </div>
+                <div className="dataset-item" role="listitem">
+                  <span className="dataset-name">{t.povertyRate}</span>
+                  <span className="dataset-meta">
+                    {neighborhoodPovertyRate != null ? `${(neighborhoodPovertyRate * 100).toFixed(1)}%` : "N/A"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="map-neighborhood-card-expand-btn"
+                  onClick={() => setNeighborhoodStatsExpanded((current) => !current)}
+                >
+                  {neighborhoodStatsExpanded ? t.hideMoreStats : t.showMoreStats}
+                </button>
+                {neighborhoodStatsExpanded && (
+                  <div className="map-neighborhood-card-extra">
+                    {[
+                      [t.restaurants, "restaurants"],
+                      [t.groceryStores, "grocery_stores"],
+                      [t.farmersMarkets, "farmers_markets"],
+                      [t.foodPantries, "food_pantries"],
+                      [t.totalAccessPoints, "access_points"],
+                    ].map(([label, key]) => (
+                      <div className="dataset-item" role="listitem" key={`map-card-${key}`}>
+                        <span className="dataset-name">{label}</span>
+                        <span className="dataset-meta">
+                          {neighborhoodMetrics.counts?.[key] ?? neighborhoodMetrics.totals?.[key] ?? 0}
+                          {" · "}{t.per1k} {formatMetric(neighborhoodMetrics.per_1000?.[key])}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
       </main>
 
       {showChartsModal && neighborhoodMetrics && (
