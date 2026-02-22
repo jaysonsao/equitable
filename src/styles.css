@@ -351,7 +351,52 @@ h1 {
   color: #696156;
 }
 
-/* Search bar */
+/* Natural language search */
+.nl-search-box {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.nl-thinking {
+  margin: 0;
+  font-size: 0.82rem;
+  font-style: italic;
+  color: #0b6e4f;
+  animation: fadeUp 0.3s ease both;
+}
+
+.parsed-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.parsed-chip {
+  background: #d5f0df;
+  border: 1px solid #a8d5bc;
+  color: #0b6e4f;
+  border-radius: 999px;
+  padding: 0.22rem 0.65rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  animation: fadeUp 0.3s ease both;
+}
+
+.parsed-chip-warn {
+  background: #fff3cd;
+  border-color: #f0c040;
+  color: #7a5a00;
+}
+
+.control-label-soft {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.72rem;
+  color: #8a8070;
+}
+
+/* Search bar (kept for legacy search-btn reuse) */
 .search-box {
   display: flex;
   gap: 0.4rem;

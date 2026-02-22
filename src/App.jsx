@@ -196,6 +196,9 @@ export default function App() {
   const [showChoropleth, setShowChoropleth] = useState(true);
   const [giniRange, setGiniRange] = useState({ min: 0.3, max: 0.55 });
 
+  const [nlQuery, setNlQuery] = useState("");
+  const [parsedIntent, setParsedIntent] = useState(null);
+  const [nlSearching, setNlSearching] = useState(false);
   const [addressInput, setAddressInput] = useState("");
   const [selectedType, setSelectedType] = useState("");
   const [radiusMiles, setRadiusMiles] = useState(String(DEFAULT_RADIUS_MILES));
@@ -599,7 +602,7 @@ export default function App() {
     }
   }, [droppedPin]);
 
-  async function runRadiusSearch(sourceHint) {
+  async function runRadiusSearch(sourceHint, overrideAddress = null, overridePlaceType = null) {
     setError("");
 
     const parsedRadius = Number.parseFloat(radiusMiles);
@@ -610,21 +613,23 @@ export default function App() {
 
     const preferAddress = sourceHint === "address";
     const preferPin = sourceHint === "pin";
-    const hasAddress = addressInput.trim().length > 0;
+    const effectiveAddress = overrideAddress ?? addressInput;
+    const hasAddress = effectiveAddress.trim().length > 0;
     const useAddress = preferAddress || (!preferPin && hasAddress);
 
     const payload = {
       radius_miles: parsedRadius,
       limit: DEFAULT_LIMIT,
     };
-    if (selectedType) payload.place_type = selectedType;
+    const effectivePlaceType = overridePlaceType ?? selectedType;
+    if (effectivePlaceType) payload.place_type = effectivePlaceType;
 
     if (useAddress) {
       if (!hasAddress) {
         setError("Enter an address before searching by address.");
         return;
       }
-      payload.address = addressInput.trim();
+      payload.address = effectiveAddress.trim();
     } else {
       if (!droppedPin) {
         setError("Drop a pin on the map before searching by pin.");
@@ -682,7 +687,44 @@ export default function App() {
     restorePreview();
   }
 
+  async function runNlSearch() {
+    if (!nlQuery.trim()) return;
+    setNlSearching(true);
+    setError("");
+    setParsedIntent(null);
+    try {
+      const res = await fetch("/api/gemini/parse-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: nlQuery }),
+      });
+      const intent = await res.json();
+      if (!res.ok) throw new Error(intent?.error || "Gemini parse failed");
+      setParsedIntent(intent);
+      // Apply extracted place_type as the active filter chip
+      if (intent.place_type) setSelectedType(intent.place_type);
+      // Use extracted address or neighborhood for the radius search
+      if (intent.address) {
+        setAddressInput(intent.address);
+        await runRadiusSearch("address", intent.address, intent.place_type);
+      } else if (intent.neighborhood) {
+        setAddressInput(intent.neighborhood + ", Boston, MA");
+        await runRadiusSearch("address", intent.neighborhood + ", Boston, MA", intent.place_type);
+      } else if (droppedPin) {
+        await runRadiusSearch("pin", null, intent.place_type);
+      } else {
+        setError("Gemini couldn't find a location in your query. Try adding a neighborhood or address.");
+      }
+    } catch (err) {
+      setError(err.message || "Smart search failed");
+    } finally {
+      setNlSearching(false);
+    }
+  }
+
   function clearAll() {
+    setNlQuery("");
+    setParsedIntent(null);
     setAddressInput("");
     setSelectedType("");
     setRadiusMiles(String(DEFAULT_RADIUS_MILES));
@@ -708,29 +750,53 @@ export default function App() {
     <div className="shell">
       <aside className="panel">
         <p className="eyebrow">Boston Food Equity Explorer</p>
-        <h1>Radius Search</h1>
+        <h1>Smart Search</h1>
         <p className="lede">
-          Search around an address or a dropped pin. Only locations within your selected radius are rendered.
+          Ask in plain language — e.g. "grocery stores in Roxbury" or "food pantries near Jamaica Plain".
         </p>
 
-        <div className="search-box">
+        <div className="nl-search-box">
           <input
             className="search-input"
             type="text"
-            placeholder="Enter address (example: 29 Austin St, Charlestown)"
-            value={addressInput}
-            onChange={(event) => setAddressInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") runRadiusSearch("address");
-            }}
+            placeholder="e.g. grocery stores in Roxbury, farmers market near Downtown"
+            value={nlQuery}
+            onChange={(e) => setNlQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") runNlSearch(); }}
           />
-          <button className="search-btn" type="button" disabled={searching} onClick={() => runRadiusSearch("address")}>
-            Search Address
+          <button
+            className="search-btn"
+            type="button"
+            disabled={nlSearching || searching}
+            onClick={runNlSearch}
+          >
+            {nlSearching ? "Thinking…" : "Search"}
           </button>
         </div>
 
+        {nlSearching && <p className="nl-thinking">Interpreting your query with Gemini AI…</p>}
+
+        {parsedIntent && (
+          <div className="parsed-chips">
+            {parsedIntent.place_type && (
+              <span className="parsed-chip">
+                {PLACE_TYPE_LABELS[parsedIntent.place_type] ?? parsedIntent.place_type}
+              </span>
+            )}
+            {parsedIntent.neighborhood && (
+              <span className="parsed-chip">{parsedIntent.neighborhood}</span>
+            )}
+            {parsedIntent.address && (
+              <span className="parsed-chip">{parsedIntent.address}</span>
+            )}
+            {!parsedIntent.place_type && !parsedIntent.neighborhood && !parsedIntent.address && (
+              <span className="parsed-chip parsed-chip-warn">No location detected — using pin</span>
+            )}
+          </div>
+        )}
+
         <div className="pin-status">
-          <span className="control-label">Dropped Pin</span>
+          <span className="control-label">Dropped Pin <span className="control-label-soft">(fallback when no location found)</span></span>
           <div className="pin-coordinates">
             {droppedPin
               ? `${droppedPin.lat.toFixed(6)}, ${droppedPin.lng.toFixed(6)}`
