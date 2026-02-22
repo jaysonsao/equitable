@@ -886,6 +886,64 @@ export default function App() {
     }
   }, []);
 
+  const buildFacilityInfoContent = useCallback((item) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "info-window";
+
+    const title = document.createElement("strong");
+    title.textContent = item.name || "Unknown";
+
+    const typeTag = document.createElement("div");
+    typeTag.className = "info-window-muted";
+    typeTag.textContent = PLACE_TYPE_LABELS[item.place_type] || item.place_type || "Unknown Type";
+
+    const address = document.createElement("div");
+    address.textContent = item.address || item.city || "No address";
+
+    const neighborhood = document.createElement("div");
+    neighborhood.className = "info-window-muted";
+    neighborhood.textContent = item.neighborhood || "";
+
+    wrapper.appendChild(title);
+    wrapper.appendChild(typeTag);
+    wrapper.appendChild(address);
+    if (item.neighborhood) wrapper.appendChild(neighborhood);
+
+    return wrapper;
+  }, []);
+
+  const openFacilityInfo = useCallback((item, markerOverride = null) => {
+    const map = mapRef.current;
+    const infoWindow = infoWindowRef.current;
+    if (!map || !infoWindow || !item) return;
+
+    let marker = markerOverride;
+    if (!marker) {
+      marker = activeMarkersRef.current.find((candidate) => {
+        const data = candidate.facilityData;
+        return (
+          data &&
+          data.name === item.name &&
+          data.place_type === item.place_type &&
+          Number(data.lat) === Number(item.lat) &&
+          Number(data.lng) === Number(item.lng)
+        );
+      }) || null;
+    }
+
+    infoWindow.setOptions({ pixelOffset: new window.google.maps.Size(0, 0) });
+    infoWindow.setContent(buildFacilityInfoContent(item));
+
+    if (marker) {
+      infoWindow.open({ map, anchor: marker });
+      return;
+    }
+
+    if (item.lat == null || item.lng == null) return;
+    infoWindow.setPosition({ lat: item.lat, lng: item.lng });
+    infoWindow.open({ map });
+  }, [buildFacilityInfoContent]);
+
   const renderSearchOverlay = useCallback((center, radiusInMiles) => {
     const map = mapRef.current;
     clearSearchOverlay();
@@ -977,33 +1035,10 @@ export default function App() {
         title: item.name,
         icon: buildMarkerIcon(item.place_type),
       });
+      marker.facilityData = item;
 
       marker.addListener("click", () => {
-        const wrapper = document.createElement("div");
-        wrapper.className = "info-window";
-
-        const title = document.createElement("strong");
-        title.textContent = item.name || "Unknown";
-
-        const typeTag = document.createElement("div");
-        typeTag.className = "info-window-muted";
-        typeTag.textContent = PLACE_TYPE_LABELS[item.place_type] || item.place_type || "Unknown Type";
-
-        const address = document.createElement("div");
-        address.textContent = item.address || item.city || "No address";
-
-        const neighborhood = document.createElement("div");
-        neighborhood.className = "info-window-muted";
-        neighborhood.textContent = item.neighborhood || "";
-
-        wrapper.appendChild(title);
-        wrapper.appendChild(typeTag);
-        wrapper.appendChild(address);
-        if (item.neighborhood) wrapper.appendChild(neighborhood);
-
-        infoWindowRef.current.setOptions({ pixelOffset: new window.google.maps.Size(0, 0) });
-        infoWindowRef.current.setContent(wrapper);
-        infoWindowRef.current.open({ map, anchor: marker });
+        openFacilityInfo(item, marker);
       });
 
       activeMarkersRef.current.push(marker);
@@ -1018,7 +1053,7 @@ export default function App() {
       });
       map.fitBounds(bounds, 90);
     }
-  }, [clearResultMarkers, renderSearchOverlay]);
+  }, [clearResultMarkers, openFacilityInfo, renderSearchOverlay]);
 
   const focusNeighborhoodOnMap = useCallback((neighborhoodName) => {
     const map = mapRef.current;
@@ -1980,7 +2015,8 @@ export default function App() {
                   onClick={() => {
                     if (!mapRef.current || item.lat == null || item.lng == null) return;
                     mapRef.current.panTo({ lat: item.lat, lng: item.lng });
-                    mapRef.current.setZoom(15);
+                    if (mapRef.current.getZoom() < 15) mapRef.current.setZoom(15);
+                    openFacilityInfo(item);
                   }}
                 >
                   <span

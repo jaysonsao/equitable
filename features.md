@@ -2,6 +2,12 @@ Features implemented
 
 ---
 
+## [2026-02-22] — In-Radius Result Click Popup (All Facility Types)
+- Clicking any item in the **In radius** list now opens a Google Maps popup with facility details (name, type, address, neighborhood)
+- List click now recenters to the exact facility location and opens the same info popup used by map marker clicks
+- Implemented for all supported facility types (restaurants, grocery stores, farmers markets, food pantries), not just restaurants
+- Added shared popup rendering/open logic so marker clicks and sidebar result clicks stay consistent
+
 ## [2026-02-22] — Neighborhood Comparison Modal (teammate integration)
 - Integrated teammate's `ComparisonDashboard` component (originally a sidebar tab) into a modal
 - "Compare" button appears next to "View Charts" in the neighborhood metrics panel header

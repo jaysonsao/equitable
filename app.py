@@ -35,9 +35,10 @@ dot_env = load_dot_env(ROOT / ".env")
 
 # Load env vars from .env into os.environ so services can read them
 for k, v in dot_env.items():
-    os.environ.setdefault(k, v)
+    if not os.environ.get(k):
+        os.environ[k] = v
 
-GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API", "")
+GOOGLE_MAPS_API_KEY = (os.environ.get("GOOGLE_MAPS_API") or dot_env.get("GOOGLE_MAPS_API") or "").strip()
 METERS_PER_MILE = 1609.344
 MIN_RADIUS_MILES = 0.1
 MAX_RADIUS_MILES = 50
