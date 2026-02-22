@@ -37,8 +37,16 @@ def _load_population_lookup():
         return _population_lookup
 
     lookup = {}
-    path = Path(__file__).resolve().parents[1] / "data" / "cleaned_data" / "population_updated.csv"
-    if path.exists():
+    base = Path(__file__).resolve().parents[1] / "data" / "cleaned_data"
+    candidates = [
+        base / "population_up.csv",
+        base / "populated_up.csv",
+        base / "population_updated.csv",
+    ]
+
+    for path in candidates:
+        if not path.exists():
+            continue
         with path.open("r", encoding="utf-8") as handle:
             reader = csv.DictReader(handle)
             for row in reader:
@@ -46,6 +54,7 @@ def _load_population_lookup():
                 pop_value = _to_float_or_none(row.get("Population"))
                 if name and pop_value is not None:
                     lookup[_normalize_neighborhood_name(name)] = int(pop_value)
+        break
 
     _population_lookup = lookup
     return _population_lookup
@@ -207,6 +216,63 @@ def get_farmers_markets():
 def get_income_inequality():
     db = get_db()
     return list(db["income_inequality"].find({}, {"_id": 0})) if "income_inequality" in db.list_collection_names() else []
+
+
+def get_neighborhood_stats(city="Boston", collection_name="neighborhoods"):
+    """
+    Return neighborhood display stats in the shape expected by /api/neighborhood-stats:
+    [{ name, poverty_rate, gini_index }, ...]
+
+    poverty_rate is normalized to 0..1 for UI compatibility.
+    """
+    db = get_db()
+    collection_names = set(db.list_collection_names())
+
+    if collection_name in collection_names:
+        query = {}
+        if city:
+            query["city"] = {"$regex": f"^{re.escape(str(city).strip())}$", "$options": "i"}
+
+        projection = {"_id": 0, "name": 1, "gini_index": 1}
+        rows = []
+        for doc in db[collection_name].find(query, projection):
+            name = str(doc.get("name") or "").strip()
+            gini_value = _to_float_or_none(doc.get("gini_index"))
+            if not name or gini_value is None:
+                continue
+
+            # Seed CSV commonly stores percentages (e.g. 23.1). UI expects 0..1.
+            normalized = gini_value / 100.0 if gini_value > 1 else gini_value
+            rows.append(
+                {
+                    "name": name,
+                    "poverty_rate": normalized,
+                    "gini_index": gini_value,
+                }
+            )
+
+        rows.sort(key=lambda x: x["name"])
+        return rows
+
+    # Fallback to legacy socioeconomic CSV when neighborhoods is unavailable.
+    csv_path = Path(__file__).resolve().parents[1] / "data" / "boston_neighborhood_socioeconomic_clean.csv"
+    if not csv_path.exists():
+        return []
+
+    results = []
+    with csv_path.open("r", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            try:
+                pop = float(row["total_population"])
+                below_pov = float(row["population_below_poverty"])
+                poverty_rate = round(below_pov / pop, 4) if pop > 0 else 0
+                results.append({"name": row["name"], "poverty_rate": poverty_rate, "gini_index": None})
+            except (ValueError, KeyError):
+                continue
+
+    results.sort(key=lambda x: x["name"])
+    return results
 
 
 def get_neighborhood_metrics(neighborhood_name):

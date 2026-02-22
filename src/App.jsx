@@ -57,6 +57,12 @@ const MAP_THEME_STYLES = {
   ],
 };
 
+const BOSTON_FALLBACK_BOUNDS = {
+  north: 42.431,
+  south: 42.228,
+  east: -70.986,
+  west: -71.191,
+};
 const MASSACHUSETTS_BOUNDS = {
   north: 42.88679,
   south: 41.18705,
@@ -433,7 +439,9 @@ export default function App() {
     if (!map) return;
 
     const scopeBounds =
-      scope === "massachusetts" ? MASSACHUSETTS_BOUNDS : bostonBoundsRef.current || MASSACHUSETTS_BOUNDS;
+      scope === "massachusetts"
+        ? MASSACHUSETTS_BOUNDS
+        : (bostonBoundsRef.current || BOSTON_FALLBACK_BOUNDS);
 
     map.setOptions({
       styles: getMapStyles(theme),
@@ -526,8 +534,12 @@ export default function App() {
     });
   }, [clearSearchOverlay]);
 
-  const filterResultsToBoston = useCallback((results) => {
+  const filterResultsByScope = useCallback((results) => {
     if (!Array.isArray(results)) return [];
+
+    if (mapScope === "massachusetts") {
+      return results.filter((item) => item.lat != null && item.lng != null);
+    }
 
     const bounds = bostonBoundsRef.current;
     const knownNeighborhoods = neighborhoodNamesRef.current;
@@ -548,7 +560,7 @@ export default function App() {
       const neighborhood = String(item.neighborhood || "").trim();
       return neighborhood ? knownNeighborhoods.has(neighborhood) : false;
     });
-  }, []);
+  }, [mapScope]);
 
   const placeMarkers = useCallback((results, center, radiusInMiles) => {
     const map = mapRef.current;
@@ -623,7 +635,7 @@ export default function App() {
 
   useEffect(() => {
     applyMapViewportSettings(mapScope, mapTheme, false);
-  }, [mapTheme, mapScope, applyMapViewportSettings]);
+  }, [mapScope, mapTheme, applyMapViewportSettings]);
 
   useEffect(() => {
     if (showSplash) return;
@@ -741,7 +753,7 @@ export default function App() {
         if (!active) return;
 
         const previewRaw = Array.isArray(previewData) ? previewData : [];
-        const previewFiltered = filterResultsToBoston(previewRaw);
+        const previewFiltered = filterResultsByScope(previewRaw);
         const filteredOut = previewRaw.length - previewFiltered.length;
 
         setPreviewResults(previewFiltered);
@@ -777,9 +789,8 @@ export default function App() {
     applyMapViewportSettings,
     clearResultMarkers,
     clearSearchOverlay,
-    mapScope,
     mapTheme,
-    filterResultsToBoston,
+    filterResultsByScope,
     placeMarkers,
     refreshBoundaryStyles,
     showSplash,
@@ -867,7 +878,7 @@ export default function App() {
         throw new Error(data?.error || `Search failed (${response.status})`);
       }
       const rawResults = data.results || [];
-      const filteredResults = filterResultsToBoston(rawResults);
+      const filteredResults = filterResultsByScope(rawResults);
       const filteredOut = rawResults.length - filteredResults.length;
 
       setSearchResults(filteredResults);
@@ -952,10 +963,18 @@ export default function App() {
     return Number(value).toFixed(digits);
   };
 
+  const formatPercent = (value, digits = 1) => {
+    if (value == null || Number.isNaN(value)) return "N/A";
+    return `${(Number(value) * 100).toFixed(digits)}%`;
+  };
+
   const neighborhoodGini = neighborhoodMetrics?.income?.avg_gini_for_neighborhood;
   const citywideGini = neighborhoodMetrics?.income?.avg_gini_citywide;
   const displayGini = neighborhoodGini;
   const giniSourceLabel = neighborhoodGini != null ? "neighborhood" : "";
+  const selectedNeighborhoodPovertyRate = selectedNeighborhood
+    ? incomeMapRef.current.get(selectedNeighborhood)
+    : null;
 
   const shownCount = hasSearched ? searchResults.length : previewResults.length;
 
@@ -1142,6 +1161,10 @@ export default function App() {
                     <span className="dataset-meta">
                       {neighborhoodMetrics.population != null ? Number(neighborhoodMetrics.population).toLocaleString() : "N/A"}
                     </span>
+                  </div>
+                  <div className="dataset-item" role="listitem">
+                    <span className="dataset-name">Poverty Rate</span>
+                    <span className="dataset-meta">{formatPercent(selectedNeighborhoodPovertyRate)}</span>
                   </div>
                   <div className="dataset-item" role="listitem">
                     <span className="dataset-name">Avg Gini Index</span>
