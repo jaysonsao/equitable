@@ -154,11 +154,7 @@ function ComparisonDashboard() {
 
   return (
     <div className="cmp-panel">
-      <div className="panel-header">
-        <p className="eyebrow">Boston Food Equity Explorer</p>
-        <h1>Compare Neighborhoods</h1>
-        <p className="lede">Enter two neighborhoods to compare food access side by side.</p>
-      </div>
+      <p className="lede" style={{ padding: "0.6rem 1rem 0", margin: 0 }}>Enter two neighborhoods to compare food access side by side.</p>
 
       <div className="panel-section">
         <div className="cmp-inputs">
@@ -554,8 +550,8 @@ export default function App() {
   const [neighborhoodMetrics, setNeighborhoodMetrics] = useState(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [metricsError, setMetricsError] = useState("");
-  const [activeTab, setActiveTab] = useState("map");
   const [showChartsModal, setShowChartsModal] = useState(false);
+  const [showCompareModal, setShowCompareModal] = useState(false);
 
   const applyMapViewportSettings = useCallback((scope, theme, fitToScope = false) => {
     const map = mapRef.current;
@@ -1081,10 +1077,7 @@ export default function App() {
     return Number(value).toFixed(digits);
   };
 
-  const neighborhoodGini = neighborhoodMetrics?.income?.avg_gini_for_neighborhood;
-  const citywideGini = neighborhoodMetrics?.income?.avg_gini_citywide;
-  const displayGini = neighborhoodGini;
-  const giniSourceLabel = neighborhoodGini != null ? "neighborhood" : "";
+  const neighborhoodPovertyRate = selectedNeighborhood ? incomeMapRef.current.get(selectedNeighborhood) ?? null : null;
 
   const shownCount = hasSearched ? searchResults.length : previewResults.length;
 
@@ -1093,20 +1086,6 @@ export default function App() {
   return (
     <div className="shell">
       <aside className="panel">
-
-        {/* ── Tab bar ── */}
-        <div className="tab-bar">
-          <button
-            className={`tab ${activeTab === "map" ? "tab-active" : ""}`}
-            onClick={() => setActiveTab("map")}
-          >Map Search</button>
-          <button
-            className={`tab ${activeTab === "compare" ? "tab-active" : ""}`}
-            onClick={() => setActiveTab("compare")}
-          >Compare</button>
-        </div>
-
-        {activeTab === "compare" ? <ComparisonDashboard /> : <>
 
         {/* ── Header ── */}
         <div className="panel-header">
@@ -1264,7 +1243,10 @@ export default function App() {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <h2>{selectedNeighborhood || "Neighborhood Metrics"}</h2>
                 {neighborhoodMetrics && (
-                  <button className="charts-btn" onClick={() => setShowChartsModal(true)}>View Charts</button>
+                  <div style={{ display: "flex", gap: "0.4rem" }}>
+                    <button className="charts-btn" onClick={() => setShowChartsModal(true)}>View Charts</button>
+                    <button className="charts-btn" onClick={() => setShowCompareModal(true)}>Compare</button>
+                  </div>
                 )}
               </div>
               {metricsLoading && <p className="dataset-caption">Loading…</p>}
@@ -1278,15 +1260,11 @@ export default function App() {
                     </span>
                   </div>
                   <div className="dataset-item" role="listitem">
-                    <span className="dataset-name">Avg Gini Index</span>
-                    <span className="dataset-meta">{formatMetric(displayGini)}{giniSourceLabel ? ` (${giniSourceLabel})` : ""}</span>
+                    <span className="dataset-name">Poverty Rate</span>
+                    <span className="dataset-meta">
+                      {neighborhoodPovertyRate != null ? `${(neighborhoodPovertyRate * 100).toFixed(1)}%` : "N/A"}
+                    </span>
                   </div>
-                  {citywideGini != null && (
-                    <div className="dataset-item" role="listitem">
-                      <span className="dataset-name">Citywide Avg Gini</span>
-                      <span className="dataset-meta">{formatMetric(citywideGini)}</span>
-                    </div>
-                  )}
                   {[
                     ["Restaurants", "restaurants"],
                     ["Grocery Stores", "grocery_stores"],
@@ -1344,7 +1322,6 @@ export default function App() {
             </div>
           </section>
         )}
-        </>}
       </aside>
 
       <main className="map-wrap">
@@ -1357,6 +1334,18 @@ export default function App() {
           metrics={neighborhoodMetrics}
           onClose={() => setShowChartsModal(false)}
         />
+      )}
+
+      {showCompareModal && (
+        <div className="modal-backdrop" onClick={() => setShowCompareModal(false)}>
+          <div className="modal-card" style={{ maxWidth: "700px" }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Compare Neighborhoods</span>
+              <button className="modal-close" onClick={() => setShowCompareModal(false)} aria-label="Close">×</button>
+            </div>
+            <ComparisonDashboard />
+          </div>
+        </div>
       )}
     </div>
   );
