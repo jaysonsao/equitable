@@ -601,6 +601,196 @@ select.control-input {
 .map-wrap { position: relative; }
 .map { width: 100%; height: 100%; }
 
+/* ── Tab bar ────────────────────────────────────────────── */
+.tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--edge);
+  background: var(--paper);
+  flex-shrink: 0;
+}
+
+.tab {
+  flex: 1;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  padding: 0.7rem 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color 150ms, border-color 150ms;
+}
+
+.tab:hover {
+  color: var(--accent);
+}
+
+.tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ── Comparison Dashboard ───────────────────────────────── */
+.cmp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.cmp-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cmp-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.cmp-badge {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.cmp-badge-a { background: #2563EB; }
+.cmp-badge-b { background: #D97706; }
+
+.cmp-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--edge);
+  background: var(--bg);
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.cmp-hood-name {
+  font-family: "Fraunces", serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmp-hood-a { color: #2563EB; text-align: left; }
+.cmp-hood-b { color: #D97706; text-align: right; }
+
+.cmp-vs {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.cmp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.cmp-table td,
+.cmp-table th {
+  padding: 0.3rem 0.4rem;
+  text-align: left;
+}
+
+.cmp-table th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+}
+
+.cmp-th-a { color: #2563EB !important; }
+.cmp-th-b { color: #D97706 !important; }
+
+.cmp-table tbody tr:nth-child(odd) { background: var(--bg); }
+
+.cmp-table td:first-child {
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+}
+
+.cmp-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.cmp-row-label {
+  font-size: 0.73rem;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.cmp-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.cmp-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.cmp-bar {
+  height: 10px;
+  border-radius: 5px;
+  min-width: 2px;
+  transition: width 300ms ease;
+}
+
+.cmp-bar-a { background: #2563EB; }
+.cmp-bar-b { background: #D97706; }
+
+.cmp-val {
+  font-size: 0.71rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  min-width: 32px;
+}
+
+.cmp-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.73rem;
+  color: var(--ink-soft);
+  margin-bottom: 0.3rem;
+}
+
+.cmp-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.cmp-swatch-a { background: #2563EB; }
+.cmp-swatch-b { background: #D97706; }
+
 /* ── Responsive ─────────────────────────────────────────── */
 @media (max-width: 960px) {
   .shell {
