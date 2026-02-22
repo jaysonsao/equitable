@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 function SplashScreen({ onDone }) {
-  const [fading, setFading] = useState(false);
+  const [showButtons, setShowButtons] = useState(false);
 
   useEffect(() => {
-    const fadeTimer = setTimeout(() => setFading(true), 2200);
-    const doneTimer = setTimeout(() => onDone(), 2800);
-    return () => { clearTimeout(fadeTimer); clearTimeout(doneTimer); };
-  }, [onDone]);
+    const timer = setTimeout(() => setShowButtons(true), 1800);
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
-    <div className={`splash${fading ? " splash--fade" : ""}`}>
+    <div className="splash">
       <div className="splash-icon">
         {/* Market cart SVG */}
         <svg viewBox="0 0 80 72" fill="none" xmlns="http://www.w3.org/2000/svg" className="splash-cart">
@@ -22,12 +21,127 @@ function SplashScreen({ onDone }) {
           <path d="M40 18 C40 18 32 26 32 32 C32 36.4 35.6 40 40 40 C44.4 40 48 36.4 48 32 C48 26 40 18 40 18Z" fill="#F59E0B" stroke="#d97706" strokeWidth="1.5"/>
           <circle cx="40" cy="32" r="3.5" fill="#ffffff"/>
         </svg>
-        <p className="splash-title">Boston Food  Mapping System</p>
+        <p className="splash-title">Boston Food Mapping System</p>
         <p className="splash-sub">Mapping access across neighborhoods</p>
+        {showButtons && (
+          <div className="splash-lang">
+            <button className="splash-lang-btn" onClick={() => onDone("en")}>English</button>
+            <button className="splash-lang-btn" onClick={() => onDone("es")}>Español</button>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
+const TRANSLATIONS = {
+  en: {
+    tabMap: "Map Search", tabCompare: "Compare",
+    eyebrow: "Boston Food Equity Explorer",
+    headerTitle: "Smart Search",
+    headerLede: 'Ask in plain language — "grocery stores in Roxbury" or "food pantry near Jamaica Plain".',
+    searchPlaceholder: "e.g. grocery stores in Roxbury…",
+    searchBtn: "Search", searchBtnBusy: "…",
+    nlThinking: "Interpreting with Gemini AI…",
+    noLocationFound: "No location found — using pin",
+    resolved: "Resolved:", center: "Center:",
+    droppedPin: "Dropped Pin", clickToPin: "Click map to drop a pin",
+    searchPinBtn: "Search Pin", radiusMiles: "Radius (miles)",
+    filterAll: "All", filterFarmersMarkets: "Farmers Markets",
+    filterRestaurants: "Restaurants", filterGroceryStores: "Grocery Stores",
+    filterFoodPantries: "Food Pantries", clearAll: "Clear all", shown: "shown",
+    mapScope: "Map scope", boston: "Boston", massachusetts: "Massachusetts",
+    hidePoverty: "Hide Poverty Rate Layer", showPoverty: "Show Poverty Rate Layer",
+    lower: "Lower", higher: "Higher",
+    legendFarmersMarket: "Farmers Market", legendRestaurant: "Restaurant",
+    legendGrocery: "Grocery", legendFoodPantry: "Food Pantry",
+    neighborhoodMetrics: "Neighborhood Metrics",
+    population: "Population", avgGiniIndex: "Avg Gini Index",
+    citywideAvgGini: "Citywide Avg Gini",
+    restaurants: "Restaurants", groceryStores: "Grocery Stores",
+    farmersMarkets: "Farmers Markets", foodPantries: "Food Pantries",
+    totalAccessPoints: "Total Access Points", per1k: "per 1k:",
+    inRadius: "In Radius", searching: "Searching...",
+    locationsInRange: "location(s) in range",
+    noLocationsMatched: "No locations matched this center + radius.",
+    noNeighborhood: "No neighborhood",
+    loadingMap: "Loading map...", loadingGoogleMaps: "Loading Google Maps...",
+    loadingBoundaries: "Loading neighborhood boundaries...",
+    loadingSampled: "Loading sampled locations...",
+    mapReadyShowing: (n, f) => `Map ready. Showing ${n} sampled locations (10%).${f > 0 ? ` ${f} outside Boston hidden.` : ""} Enter an address or drop a pin.`,
+    mapReadyEnter: "Map ready. Enter an address or drop a pin, then search by radius.",
+    mapReadyNone: "Map ready. No in-Boston preview locations returned.",
+    couldNotInit: "Could not initialize the map.",
+    radiusMin: (min) => `Radius must be at least ${min} miles.`,
+    enterAddress: "Enter an address before searching by address.",
+    dropPin: "Drop a pin on the map before searching by pin.",
+    foundLocations: (n, r, f) => `Found ${n} in-Boston location(s) within ${r} miles.${f > 0 ? ` ${f} outside Boston hidden.` : ""}`,
+    geminiNoLocation: "Gemini couldn't find a location in your query. Try adding a neighborhood or address.",
+    smartSearchFailed: "Smart search failed",
+    metricsLoadFailed: "Failed to load neighborhood metrics.",
+    compareTitle: "Compare Neighborhoods",
+    compareLede: "Enter two neighborhoods to compare food access side by side.",
+    comparePlaceholderA: "e.g. Roxbury", comparePlaceholderB: "e.g. Back Bay",
+    compareBtn: "Compare", compareBtnBusy: "Loading…",
+    compareBothRequired: "Enter both neighborhood names.",
+    compareDifferent: "Choose two different neighborhoods.",
+    overview: "Overview", povertyRate: "Poverty Rate", avgGini: "Avg Gini",
+    foodLocationCounts: "Food Location Counts", per1000Residents: "Per 1,000 Residents",
+  },
+  es: {
+    tabMap: "Búsqueda en Mapa", tabCompare: "Comparar",
+    eyebrow: "Explorador de Equidad Alimentaria de Boston",
+    headerTitle: "Búsqueda Inteligente",
+    headerLede: 'Pregunta en lenguaje natural — "supermercados en Roxbury" o "banco de alimentos cerca de Jamaica Plain".',
+    searchPlaceholder: "ej. supermercados en Roxbury…",
+    searchBtn: "Buscar", searchBtnBusy: "…",
+    nlThinking: "Interpretando con Gemini AI…",
+    noLocationFound: "Ubicación no encontrada — usando pin",
+    resolved: "Dirección:", center: "Centro:",
+    droppedPin: "Pin Colocado", clickToPin: "Haz clic en el mapa para colocar un pin",
+    searchPinBtn: "Buscar con Pin", radiusMiles: "Radio (millas)",
+    filterAll: "Todos", filterFarmersMarkets: "Mercados Agrícolas",
+    filterRestaurants: "Restaurantes", filterGroceryStores: "Supermercados",
+    filterFoodPantries: "Bancos de Alimentos", clearAll: "Limpiar todo", shown: "mostrados",
+    mapScope: "Alcance del mapa", boston: "Boston", massachusetts: "Massachusetts",
+    hidePoverty: "Ocultar Capa de Pobreza", showPoverty: "Mostrar Capa de Pobreza",
+    lower: "Menor", higher: "Mayor",
+    legendFarmersMarket: "Mercado Agrícola", legendRestaurant: "Restaurante",
+    legendGrocery: "Supermercado", legendFoodPantry: "Banco de Alimentos",
+    neighborhoodMetrics: "Métricas del Vecindario",
+    population: "Población", avgGiniIndex: "Índice Gini Promedio",
+    citywideAvgGini: "Gini Promedio Ciudad",
+    restaurants: "Restaurantes", groceryStores: "Supermercados",
+    farmersMarkets: "Mercados Agrícolas", foodPantries: "Bancos de Alimentos",
+    totalAccessPoints: "Puntos de Acceso Totales", per1k: "por 1k:",
+    inRadius: "En el Radio", searching: "Buscando...",
+    locationsInRange: "lugar(es) encontrado(s)",
+    noLocationsMatched: "No se encontraron lugares en este radio.",
+    noNeighborhood: "Sin vecindario",
+    loadingMap: "Cargando mapa...", loadingGoogleMaps: "Cargando Google Maps...",
+    loadingBoundaries: "Cargando límites de vecindarios...",
+    loadingSampled: "Cargando ubicaciones de muestra...",
+    mapReadyShowing: (n, f) => `Mapa listo. Mostrando ${n} ubicaciones de muestra (10%).${f > 0 ? ` ${f} fuera de Boston ocultos.` : ""} Ingresa una dirección o coloca un pin.`,
+    mapReadyEnter: "Mapa listo. Ingresa una dirección o coloca un pin para buscar por radio.",
+    mapReadyNone: "Mapa listo. No se encontraron ubicaciones en Boston.",
+    couldNotInit: "No se pudo inicializar el mapa.",
+    radiusMin: (min) => `El radio debe ser al menos ${min} millas.`,
+    enterAddress: "Ingresa una dirección antes de buscar.",
+    dropPin: "Coloca un pin en el mapa antes de buscar.",
+    foundLocations: (n, r, f) => `Se encontraron ${n} lugar(es) en Boston dentro de ${r} millas.${f > 0 ? ` ${f} fuera de Boston ocultos.` : ""}`,
+    geminiNoLocation: "Gemini no pudo encontrar una ubicación. Intenta agregar un vecindario o dirección.",
+    smartSearchFailed: "La búsqueda inteligente falló",
+    metricsLoadFailed: "Error al cargar las métricas del vecindario.",
+    compareTitle: "Comparar Vecindarios",
+    compareLede: "Ingresa dos vecindarios para comparar el acceso a alimentos.",
+    comparePlaceholderA: "ej. Roxbury", comparePlaceholderB: "ej. Back Bay",
+    compareBtn: "Comparar", compareBtnBusy: "Cargando…",
+    compareBothRequired: "Ingresa ambos nombres de vecindarios.",
+    compareDifferent: "Elige dos vecindarios diferentes.",
+    overview: "Resumen", povertyRate: "Tasa de Pobreza", avgGini: "Gini Promedio",
+    foodLocationCounts: "Cantidad de Lugares de Comida", per1000Residents: "Por 1,000 Residentes",
+  },
+};
 
 const BOSTON_CENTER = { lat: 42.3601, lng: -71.0589 };
 const BOSTON_GEOJSON = "/data/boston_neighborhood_boundaries.geojson";
@@ -91,7 +205,8 @@ function CompareBar({ label, valueA, valueB, format = (v) => (v ?? 0).toFixed(1)
   );
 }
 
-function ComparisonDashboard() {
+function ComparisonDashboard({ lang }) {
+  const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
   const [nameA, setNameA] = useState("");
   const [nameB, setNameB] = useState("");
   const [dataA, setDataA] = useState(null);
@@ -114,8 +229,8 @@ function ComparisonDashboard() {
   async function compare() {
     const a = nameA.trim();
     const b = nameB.trim();
-    if (!a || !b) { setError("Enter both neighborhood names."); return; }
-    if (a.toLowerCase() === b.toLowerCase()) { setError("Choose two different neighborhoods."); return; }
+    if (!a || !b) { setError(t.compareBothRequired); return; }
+    if (a.toLowerCase() === b.toLowerCase()) { setError(t.compareDifferent); return; }
     setLoading(true);
     setError("");
     setDataA(null);
@@ -142,18 +257,18 @@ function ComparisonDashboard() {
   const fmtDec = (v) => v != null ? Number(v).toFixed(2) : "N/A";
 
   const FOOD_KEYS = [
-    { key: "restaurants", label: "Restaurants" },
-    { key: "grocery_stores", label: "Grocery Stores" },
-    { key: "farmers_markets", label: "Farmers Markets" },
-    { key: "food_pantries", label: "Food Pantries" },
+    { key: "restaurants", label: t.restaurants },
+    { key: "grocery_stores", label: t.groceryStores },
+    { key: "farmers_markets", label: t.farmersMarkets },
+    { key: "food_pantries", label: t.foodPantries },
   ];
 
   return (
     <div className="cmp-panel">
       <div className="panel-header">
-        <p className="eyebrow">Boston Food Equity Explorer</p>
-        <h1>Compare Neighborhoods</h1>
-        <p className="lede">Enter two neighborhoods to compare food access side by side.</p>
+        <p className="eyebrow">{t.eyebrow}</p>
+        <h1>{t.compareTitle}</h1>
+        <p className="lede">{t.compareLede}</p>
       </div>
 
       <div className="panel-section">
@@ -163,7 +278,7 @@ function ComparisonDashboard() {
             <input
               className="search-input"
               list="hood-list-a"
-              placeholder="e.g. Roxbury"
+              placeholder={t.comparePlaceholderA}
               value={nameA}
               onChange={(e) => setNameA(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && compare()}
@@ -177,7 +292,7 @@ function ComparisonDashboard() {
             <input
               className="search-input"
               list="hood-list-b"
-              placeholder="e.g. Back Bay"
+              placeholder={t.comparePlaceholderB}
               value={nameB}
               onChange={(e) => setNameB(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && compare()}
@@ -188,7 +303,7 @@ function ComparisonDashboard() {
           </div>
         </div>
         <button className="search-btn" style={{ width: "100%" }} onClick={compare} disabled={loading}>
-          {loading ? "Loading…" : "Compare"}
+          {loading ? t.compareBtnBusy : t.compareBtn}
         </button>
         {error && <p className="status status-error">{error}</p>}
       </div>
@@ -204,7 +319,7 @@ function ComparisonDashboard() {
 
           {/* Overview stats */}
           <div className="panel-section">
-            <p className="section-label">Overview</p>
+            <p className="section-label">{t.overview}</p>
             <table className="cmp-table">
               <thead>
                 <tr>
@@ -215,22 +330,22 @@ function ComparisonDashboard() {
               </thead>
               <tbody>
                 <tr>
-                  <td>Population</td>
+                  <td>{t.population}</td>
                   <td>{fmt(dataA.population)}</td>
                   <td>{fmt(dataB.population)}</td>
                 </tr>
                 <tr>
-                  <td>Poverty Rate</td>
+                  <td>{t.povertyRate}</td>
                   <td>{fmtPct(dataA.poverty_rate)}</td>
                   <td>{fmtPct(dataB.poverty_rate)}</td>
                 </tr>
                 <tr>
-                  <td>Avg Gini</td>
+                  <td>{t.avgGini}</td>
                   <td>{fmtDec(dataA.income?.avg_gini_for_neighborhood)}</td>
                   <td>{fmtDec(dataB.income?.avg_gini_for_neighborhood)}</td>
                 </tr>
                 <tr>
-                  <td>Total Access Points</td>
+                  <td>{t.totalAccessPoints}</td>
                   <td>{fmt(dataA.totals?.access_points)}</td>
                   <td>{fmt(dataB.totals?.access_points)}</td>
                 </tr>
@@ -240,7 +355,7 @@ function ComparisonDashboard() {
 
           {/* Food counts bar chart */}
           <div className="panel-section">
-            <p className="section-label">Food Location Counts</p>
+            <p className="section-label">{t.foodLocationCounts}</p>
             <div className="cmp-legend">
               <span className="cmp-swatch cmp-swatch-a" />{dataA.neighborhood || nameA}
               <span className="cmp-swatch cmp-swatch-b" style={{ marginLeft: "12px" }} />{dataB.neighborhood || nameB}
@@ -258,7 +373,7 @@ function ComparisonDashboard() {
 
           {/* Per 1,000 bar chart */}
           <div className="panel-section">
-            <p className="section-label">Per 1,000 Residents</p>
+            <p className="section-label">{t.per1000Residents}</p>
             {FOOD_KEYS.map(({ key, label }) => (
               <CompareBar
                 key={key}
@@ -401,7 +516,9 @@ export default function App() {
   const radiusCircleRef = useRef(null);
 
   const [showSplash, setShowSplash] = useState(true);
-  const [status, setStatus] = useState("Loading map...");
+  const [lang, setLang] = useState("en");
+  const langRef = useRef("en");
+  const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const mapTheme = "civic";
   const [mapScope, setMapScope] = useState("boston");
@@ -609,15 +726,14 @@ export default function App() {
   }, [clearResultMarkers, renderSearchOverlay]);
 
   const restorePreview = useCallback(() => {
+    const tr = TRANSLATIONS[langRef.current] || TRANSLATIONS.en;
     if (previewResults.length > 0) {
       placeMarkers(previewResults, null, DEFAULT_RADIUS_MILES);
-      setStatus(
-        `Map ready. Showing ${previewResults.length} sampled locations (10%). Enter an address or drop a pin.`
-      );
+      setStatus(tr.mapReadyShowing(previewResults.length, 0));
     } else {
       clearResultMarkers();
       clearSearchOverlay();
-      setStatus("Map ready. Enter an address or drop a pin, then search by radius.");
+      setStatus(tr.mapReadyEnter);
     }
   }, [clearResultMarkers, clearSearchOverlay, placeMarkers, previewResults]);
 
@@ -631,7 +747,7 @@ export default function App() {
 
     async function init() {
       try {
-        setStatus("Loading Google Maps...");
+        setStatus(t.loadingGoogleMaps);
         await loadGoogleMaps(GOOGLE_MAPS_API_KEY);
         if (!active || !mapElRef.current) return;
 
@@ -650,7 +766,7 @@ export default function App() {
         infoWindowRef.current = new window.google.maps.InfoWindow();
         window.google.maps.event.trigger(map, "resize");
 
-        setStatus("Loading neighborhood boundaries...");
+        setStatus(t.loadingBoundaries);
         const [response, incomeRes] = await Promise.all([
           fetch(BOSTON_GEOJSON),
           fetch("/api/neighborhood-stats"),
@@ -715,7 +831,7 @@ export default function App() {
           } catch (err) {
             if (!active) return;
             setNeighborhoodMetrics(null);
-            setMetricsError(err.message || "Failed to load neighborhood metrics.");
+            setMetricsError(err.message || t.metricsLoadFailed);
           } finally {
             if (active) setMetricsLoading(false);
           }
@@ -732,7 +848,7 @@ export default function App() {
           setDroppedPin(nextPin);
         });
 
-        setStatus("Loading sampled locations...");
+        setStatus(t.loadingSampled);
         const previewResponse = await fetch(`/api/food-distributors?sample_pct=${PREVIEW_SAMPLE_PCT}`);
         if (!previewResponse.ok) {
           throw new Error(`Preview data failed to load (${previewResponse.status}).`);
@@ -747,18 +863,14 @@ export default function App() {
         setPreviewResults(previewFiltered);
         if (previewFiltered.length > 0) {
           placeMarkers(previewFiltered, null, DEFAULT_RADIUS_MILES);
-          setStatus(
-            `Map ready. Showing ${previewFiltered.length} sampled locations (10%).${
-              filteredOut > 0 ? ` ${filteredOut} outside Boston hidden.` : ""
-            } Enter an address or drop a pin.`
-          );
+          setStatus(t.mapReadyShowing(previewFiltered.length, filteredOut));
         } else {
-          setStatus("Map ready. No in-Boston preview locations returned.");
+          setStatus(t.mapReadyNone);
         }
       } catch (err) {
         if (!active) return;
         setError(err.message);
-        setStatus("Could not initialize the map.");
+        setStatus(t.couldNotInit);
       }
     }
 
@@ -822,7 +934,7 @@ export default function App() {
 
     const parsedRadius = Number.parseFloat(radiusMiles);
     if (!Number.isFinite(parsedRadius) || parsedRadius < MIN_RADIUS_MILES) {
-      setError(`Radius must be at least ${MIN_RADIUS_MILES} miles.`);
+      setError(t.radiusMin(MIN_RADIUS_MILES));
       return;
     }
 
@@ -841,13 +953,13 @@ export default function App() {
 
     if (useAddress) {
       if (!hasAddress) {
-        setError("Enter an address before searching by address.");
+        setError(t.enterAddress);
         return;
       }
       payload.address = effectiveAddress.trim();
     } else {
       if (!droppedPin) {
-        setError("Drop a pin on the map before searching by pin.");
+        setError(t.dropPin);
         return;
       }
       payload.pin = droppedPin;
@@ -878,11 +990,7 @@ export default function App() {
       }
 
       placeMarkers(filteredResults, data.search_center || null, parsedRadius);
-      setStatus(
-        `Found ${filteredResults.length} in-Boston location(s) within ${parsedRadius} miles.${
-          filteredOut > 0 ? ` ${filteredOut} outside Boston hidden.` : ""
-        }`
-      );
+      setStatus(t.foundLocations(filteredResults.length, parsedRadius, filteredOut));
     } catch (err) {
       setSearchResults([]);
       setSearchCenter(null);
@@ -928,10 +1036,10 @@ export default function App() {
       } else if (droppedPin) {
         await runRadiusSearch("pin", null, intent.place_type);
       } else {
-        setError("Gemini couldn't find a location in your query. Try adding a neighborhood or address.");
+        setError(t.geminiNoLocation);
       }
     } catch (err) {
-      setError(err.message || "Smart search failed");
+      setError(err.message || t.smartSearchFailed);
     } finally {
       setNlSearching(false);
     }
@@ -959,7 +1067,10 @@ export default function App() {
 
   const shownCount = hasSearched ? searchResults.length : previewResults.length;
 
-  if (showSplash) return <SplashScreen onDone={() => setShowSplash(false)} />;
+  const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
+  langRef.current = lang;
+
+  if (showSplash) return <SplashScreen onDone={(l) => { setLang(l); setShowSplash(false); }} />;
 
   return (
     <div className="shell">
@@ -970,20 +1081,20 @@ export default function App() {
           <button
             className={`tab ${activeTab === "map" ? "tab-active" : ""}`}
             onClick={() => setActiveTab("map")}
-          >Map Search</button>
+          >{t.tabMap}</button>
           <button
             className={`tab ${activeTab === "compare" ? "tab-active" : ""}`}
             onClick={() => setActiveTab("compare")}
-          >Compare</button>
+          >{t.tabCompare}</button>
         </div>
 
-        {activeTab === "compare" ? <ComparisonDashboard /> : <>
+        {activeTab === "compare" ? <ComparisonDashboard lang={lang} /> : <>
 
         {/* ── Header ── */}
         <div className="panel-header">
-          <p className="eyebrow">Boston Food Equity Explorer</p>
-          <h1>Smart Search</h1>
-          <p className="lede">Ask in plain language — "grocery stores in Roxbury" or "food pantry near Jamaica Plain".</p>
+          <p className="eyebrow">{t.eyebrow}</p>
+          <h1>{t.headerTitle}</h1>
+          <p className="lede">{t.headerLede}</p>
         </div>
 
         {/* ── Search ── */}
@@ -992,7 +1103,7 @@ export default function App() {
             <input
               className="search-input"
               type="text"
-              placeholder="e.g. grocery stores in Roxbury…"
+              placeholder={t.searchPlaceholder}
               value={nlQuery}
               onChange={(e) => setNlQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") runNlSearch(); }}
@@ -1003,11 +1114,11 @@ export default function App() {
               disabled={nlSearching || searching}
               onClick={runNlSearch}
             >
-              {nlSearching ? "…" : "Search"}
+              {nlSearching ? t.searchBtnBusy : t.searchBtn}
             </button>
           </div>
 
-          {nlSearching && <p className="nl-thinking">Interpreting with Gemini AI…</p>}
+          {nlSearching && <p className="nl-thinking">{t.nlThinking}</p>}
 
           {parsedIntent && (
             <div className="parsed-chips">
@@ -1021,32 +1132,32 @@ export default function App() {
                 <span className="parsed-chip">{parsedIntent.address}</span>
               )}
               {!parsedIntent.place_type && !parsedIntent.neighborhood && !parsedIntent.address && (
-                <span className="parsed-chip parsed-chip-warn">No location found — using pin</span>
+                <span className="parsed-chip parsed-chip-warn">{t.noLocationFound}</span>
               )}
             </div>
           )}
 
           {(lastSearchSource || lastResolvedAddress) && (
             <div className="search-meta">
-              {lastResolvedAddress && <div>Resolved: {lastResolvedAddress}</div>}
-              {searchCenter && <div>Center: {searchCenter.lat.toFixed(5)}, {searchCenter.lng.toFixed(5)}</div>}
+              {lastResolvedAddress && <div>{t.resolved} {lastResolvedAddress}</div>}
+              {searchCenter && <div>{t.center} {searchCenter.lat.toFixed(5)}, {searchCenter.lng.toFixed(5)}</div>}
             </div>
           )}
         </div>
 
         {/* ── Pin + Radius ── */}
         <div className="panel-section">
-          <p className="section-label">Dropped Pin</p>
+          <p className="section-label">{t.droppedPin}</p>
           <div className="pin-row">
             <span className={`pin-coords${droppedPin ? "" : " pin-coords-empty"}`}>
-              {droppedPin ? `${droppedPin.lat.toFixed(5)}, ${droppedPin.lng.toFixed(5)}` : "Click map to drop a pin"}
+              {droppedPin ? `${droppedPin.lat.toFixed(5)}, ${droppedPin.lng.toFixed(5)}` : t.clickToPin}
             </span>
             <button className="pin-search-btn" type="button" disabled={searching} onClick={() => runRadiusSearch("pin")}>
-              Search Pin
+              {t.searchPinBtn}
             </button>
           </div>
           <div className="radius-row">
-            <span className="radius-label">Radius (miles)</span>
+            <span className="radius-label">{t.radiusMiles}</span>
             <input
               className="control-input"
               type="number"
@@ -1062,11 +1173,11 @@ export default function App() {
         <div className="panel-section">
           <div className="filter-chips">
             {[
-              { value: "", label: "All" },
-              { value: "farmers_market", label: "Farmers Markets" },
-              { value: "restaurant", label: "Restaurants" },
-              { value: "grocery_store", label: "Grocery Stores" },
-              { value: "food_pantry", label: "Food Pantries" },
+              { value: "", label: t.filterAll },
+              { value: "farmers_market", label: t.filterFarmersMarkets },
+              { value: "restaurant", label: t.filterRestaurants },
+              { value: "grocery_store", label: t.filterGroceryStores },
+              { value: "food_pantry", label: t.filterFoodPantries },
             ].map((option) => (
               <button
                 key={option.value}
@@ -1079,18 +1190,18 @@ export default function App() {
             ))}
           </div>
           <div className="meta-row">
-            <button className="toggle-all" type="button" onClick={clearAll}>Clear all</button>
-            <span className="count-pill">{shownCount} shown</span>
+            <button className="toggle-all" type="button" onClick={clearAll}>{t.clearAll}</button>
+            <span className="count-pill">{shownCount} {t.shown}</span>
           </div>
         </div>
 
         {/* ── Map options ── */}
         <div className="panel-section">
           <div className="control-row">
-            <span className="control-row-label">Map scope</span>
+            <span className="control-row-label">{t.mapScope}</span>
             <select className="control-input" value={mapScope} onChange={(e) => setMapScope(e.target.value)}>
-              <option value="boston">Boston</option>
-              <option value="massachusetts">Massachusetts</option>
+              <option value="boston">{t.boston}</option>
+              <option value="massachusetts">{t.massachusetts}</option>
             </select>
           </div>
           <button
@@ -1102,14 +1213,14 @@ export default function App() {
               refreshBoundaryStyles();
             }}
           >
-            {showChoropleth ? "Hide" : "Show"} Poverty Rate Layer
+            {showChoropleth ? t.hidePoverty : t.showPoverty}
           </button>
           {showChoropleth && (
             <div className="choropleth-legend">
               <div className="choropleth-bar" />
               <div className="choropleth-labels">
-                <span>{(giniRange.min * 100).toFixed(1)}% — Lower</span>
-                <span>Higher — {(giniRange.max * 100).toFixed(1)}%</span>
+                <span>{(giniRange.min * 100).toFixed(1)}% — {t.lower}</span>
+                <span>{t.higher} — {(giniRange.max * 100).toFixed(1)}%</span>
               </div>
             </div>
           )}
@@ -1121,10 +1232,10 @@ export default function App() {
         {/* ── Legend ── */}
         <div className="panel-section">
           <div className="legend-row">
-            <span className="legend-dot" style={{ background: "#F59E0B" }} /> Farmers Market
-            <span className="legend-dot" style={{ background: "#10B981" }} /> Restaurant
-            <span className="legend-dot" style={{ background: "#3B82F6" }} /> Grocery
-            <span className="legend-dot" style={{ background: "#1a1917" }} /> Food Pantry
+            <span className="legend-dot" style={{ background: "#F59E0B" }} /> {t.legendFarmersMarket}
+            <span className="legend-dot" style={{ background: "#10B981" }} /> {t.legendRestaurant}
+            <span className="legend-dot" style={{ background: "#3B82F6" }} /> {t.legendGrocery}
+            <span className="legend-dot" style={{ background: "#1a1917" }} /> {t.legendFoodPantry}
           </div>
         </div>
 
@@ -1132,39 +1243,39 @@ export default function App() {
         {(selectedNeighborhood || metricsLoading || metricsError) && (
           <div className="panel-section">
             <section className="dataset">
-              <h2>{selectedNeighborhood || "Neighborhood Metrics"}</h2>
-              {metricsLoading && <p className="dataset-caption">Loading…</p>}
+              <h2>{selectedNeighborhood || t.neighborhoodMetrics}</h2>
+              {metricsLoading && <p className="dataset-caption">{t.compareBtnBusy}</p>}
               {metricsError && <p className="dataset-caption">{metricsError}</p>}
               {!metricsLoading && neighborhoodMetrics && (
                 <div className="dataset-list" role="list">
                   <div className="dataset-item" role="listitem">
-                    <span className="dataset-name">Population</span>
+                    <span className="dataset-name">{t.population}</span>
                     <span className="dataset-meta">
                       {neighborhoodMetrics.population != null ? Number(neighborhoodMetrics.population).toLocaleString() : "N/A"}
                     </span>
                   </div>
                   <div className="dataset-item" role="listitem">
-                    <span className="dataset-name">Avg Gini Index</span>
+                    <span className="dataset-name">{t.avgGiniIndex}</span>
                     <span className="dataset-meta">{formatMetric(displayGini)}{giniSourceLabel ? ` (${giniSourceLabel})` : ""}</span>
                   </div>
                   {citywideGini != null && (
                     <div className="dataset-item" role="listitem">
-                      <span className="dataset-name">Citywide Avg Gini</span>
+                      <span className="dataset-name">{t.citywideAvgGini}</span>
                       <span className="dataset-meta">{formatMetric(citywideGini)}</span>
                     </div>
                   )}
                   {[
-                    ["Restaurants", "restaurants"],
-                    ["Grocery Stores", "grocery_stores"],
-                    ["Farmers Markets", "farmers_markets"],
-                    ["Food Pantries", "food_pantries"],
-                    ["Total Access Points", "access_points"],
+                    [t.restaurants, "restaurants"],
+                    [t.groceryStores, "grocery_stores"],
+                    [t.farmersMarkets, "farmers_markets"],
+                    [t.foodPantries, "food_pantries"],
+                    [t.totalAccessPoints, "access_points"],
                   ].map(([label, key]) => (
                     <div className="dataset-item" role="listitem" key={key}>
                       <span className="dataset-name">{label}</span>
                       <span className="dataset-meta">
                         {neighborhoodMetrics.counts?.[key] ?? neighborhoodMetrics.totals?.[key] ?? 0}
-                        {" · "}per 1k: {formatMetric(neighborhoodMetrics.per_1000?.[key])}
+                        {" · "}{t.per1k} {formatMetric(neighborhoodMetrics.per_1000?.[key])}
                       </span>
                     </div>
                   ))}
@@ -1176,13 +1287,13 @@ export default function App() {
 
         {hasSearched && (
           <section className="dataset">
-            <h2>In Radius</h2>
+            <h2>{t.inRadius}</h2>
             <p className="dataset-caption">
-              {searching ? "Searching..." : `${searchResults.length} location(s) in range`}
+              {searching ? t.searching : `${searchResults.length} ${t.locationsInRange}`}
             </p>
 
             {!searching && searchResults.length === 0 && (
-              <p className="dataset-caption">No locations matched this center + radius.</p>
+              <p className="dataset-caption">{t.noLocationsMatched}</p>
             )}
 
             <div className="dataset-list" role="list" aria-label="Radius search results">
@@ -1203,7 +1314,7 @@ export default function App() {
                   />
                   <div className="result-text">
                     <span className="dataset-name">{item.name || "Unknown"}</span>
-                    <span className="dataset-meta">{item.neighborhood || item.city || "No neighborhood"}</span>
+                    <span className="dataset-meta">{item.neighborhood || item.city || t.noNeighborhood}</span>
                   </div>
                 </div>
               ))}
