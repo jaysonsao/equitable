@@ -78,9 +78,17 @@ const NEIGHBORHOOD_NAMES = [
   "Allston","Back Bay","Beacon Hill","Brighton","Charlestown","Chinatown",
   "Dorchester","Downtown","East Boston","Fenway","Hyde Park","Jamaica Plain",
   "Mattapan","Mission Hill","North End","Roslindale","Roxbury","South Boston",
-  "South End","West End","West Roxbury","Whittier Street","Longwood",
-  "Harbor Islands","East Boston",
+  "South End","West End","West Roxbury","Whittier Street","Longwood","East Boston",
 ];
+const EXCLUDED_SEARCH_NEIGHBORHOODS = new Set(["harbor islands"]);
+
+function normalizeNeighborhood(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isExcludedNeighborhoodForSearch(value) {
+  return EXCLUDED_SEARCH_NEIGHBORHOODS.has(normalizeNeighborhood(value));
+}
 
 function CompareBar({ label, valueA, valueB, format = (v) => (v ?? 0).toFixed(1) }) {
   const max = Math.max(valueA || 0, valueB || 0, 0.001);
@@ -632,9 +640,8 @@ export default function App() {
 
   const renderSearchOverlay = useCallback((center, radiusInMiles) => {
     const map = mapRef.current;
-    if (!map || !center) return;
-
     clearSearchOverlay();
+    if (!map || !center) return;
 
     centerMarkerRef.current = new window.google.maps.Marker({
       map,
@@ -666,7 +673,11 @@ export default function App() {
     if (!Array.isArray(results)) return [];
 
     if (mapScope === "massachusetts") {
-      return results.filter((item) => item.lat != null && item.lng != null);
+      return results.filter((item) => {
+        if (item.lat == null || item.lng == null) return false;
+        if (isExcludedNeighborhoodForSearch(item.neighborhood)) return false;
+        return true;
+      });
     }
 
     const bounds = bostonBoundsRef.current;
@@ -674,6 +685,7 @@ export default function App() {
 
     return results.filter((item) => {
       if (item.lat == null || item.lng == null) return false;
+      if (isExcludedNeighborhoodForSearch(item.neighborhood)) return false;
 
       if (bounds) {
         const inBounds =
@@ -926,7 +938,10 @@ export default function App() {
         const bounds = new window.google.maps.LatLngBounds();
         const names = new Set();
         map.data.forEach((feature) => {
-          names.add(getNeighborhoodName(feature));
+          const featureName = getNeighborhoodName(feature);
+          if (!isExcludedNeighborhoodForSearch(featureName)) {
+            names.add(featureName);
+          }
           const geometry = feature.getGeometry();
           if (geometry) extendBoundsFromGeometry(bounds, geometry);
         });
@@ -942,6 +957,17 @@ export default function App() {
         map.data.addListener("click", async (event) => {
           lastFeatureClickTsRef.current = Date.now();
           const name = getNeighborhoodName(event.feature);
+          if (isExcludedNeighborhoodForSearch(name)) {
+            setDroppedPin(null);
+            setSelectedNeighborhood(name);
+            setNeighborhoodMetrics(null);
+            setMetricsError("");
+            setMetricsLoading(false);
+            setStatus(`${name} has no locations and is excluded from search.`);
+            infoWindowRef.current?.close();
+            return;
+          }
+
           const nextPin = { lat: event.latLng.lat(), lng: event.latLng.lng() };
           setDroppedPin(nextPin);
           setSelectedNeighborhood(name);
@@ -1190,12 +1216,20 @@ export default function App() {
     clearSearchState();
   }
 
+  function clearPinAndRadius() {
+    setDroppedPin(null);
+    clearSearchOverlay();
+    clearSearchState();
+    infoWindowRef.current?.close();
+  }
+
   const formatMetric = (value, digits = 2) => {
     if (value == null || Number.isNaN(value)) return "N/A";
     return Number(value).toFixed(digits);
   };
 
   const neighborhoodPovertyRate = selectedNeighborhood ? incomeMapRef.current.get(selectedNeighborhood) ?? null : null;
+  const hasPinOrRadiusOnMap = Boolean(droppedPin || searchCenter);
 
   const shownCount = hasSearched ? searchResults.length : previewResults.length;
 
@@ -1207,7 +1241,7 @@ export default function App() {
 
         {/* ── Header ── */}
         <div className="panel-header">
-          <p className="eyebrow">Boston Food Equity Explorer</p>
+          <p className="eyebrow">Boston Food Mapping Explorer</p>
           <h1>Smart Search</h1>
           <p className="lede">Ask in plain language — "grocery stores in Roxbury" or "food pantry near Jamaica Plain".</p>
         </div>
@@ -1270,6 +1304,11 @@ export default function App() {
             <button className="pin-search-btn" type="button" disabled={searching} onClick={() => runRadiusSearch("pin")}>
               Search Pin
             </button>
+            {hasPinOrRadiusOnMap && (
+              <button className="pin-cancel-btn" type="button" disabled={searching} onClick={clearPinAndRadius}>
+                Cancel
+              </button>
+            )}
           </div>
           <div className="radius-row">
             <span className="radius-label">Radius (miles)</span>

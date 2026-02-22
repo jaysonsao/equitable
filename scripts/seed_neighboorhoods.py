@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Seed neighborhood documents into MongoDB collection `neighboorhoods`.
+Seed neighborhood documents into MongoDB collection `neighborhoods`.
 
 Usage:
   python scripts/seed_neighboorhoods.py
@@ -23,8 +23,8 @@ from pymongo import MongoClient
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GEOJSON = ROOT / "data" / "boston_neighborhood_boundaries.geojson"
 DEFAULT_SOCIO_CSV = ROOT / "data" / "boston_neighborhood_socioeconomic_clean.csv"
-DEFAULT_COLLECTION = "neighboorhoods"
-DEFAULT_SECONDARY_COLLECTION = "neighborhoods"
+DEFAULT_COLLECTION = "neighborhoods"
+DEFAULT_SECONDARY_COLLECTION = ""
 FOOD_COLLECTION = "food-distributors"
 
 INCOME_BUCKET_MIDPOINTS = {
@@ -207,12 +207,12 @@ def build_stats_lookup(collection) -> dict[int, dict[str, int]]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Seed neighboorhoods collection")
+    parser = argparse.ArgumentParser(description="Seed neighborhoods collection")
     parser.add_argument("--collection", default=DEFAULT_COLLECTION, help="Target neighborhoods collection name")
     parser.add_argument(
         "--secondary-collection",
         default=DEFAULT_SECONDARY_COLLECTION,
-        help="Secondary neighborhoods collection name (used to write a copy with same schema)",
+        help="Optional secondary neighborhoods collection name (empty means skip secondary write)",
     )
     parser.add_argument(
         "--no-secondary",
@@ -352,9 +352,13 @@ def main() -> None:
 
             secondary_upserts = 0
             for doc in docs:
+                secondary_doc = {k: v for k, v in doc.items() if k != "gini_index"}
                 secondary_collection.update_one(
                     {"neighborhood_id": doc["neighborhood_id"]},
-                    {"$set": doc},
+                    {
+                        "$set": secondary_doc,
+                        "$unset": {"gini_index": ""},
+                    },
                     upsert=True,
                 )
                 secondary_upserts += 1

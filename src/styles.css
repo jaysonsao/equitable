@@ -278,6 +278,31 @@ h1 {
   cursor: not-allowed;
 }
 
+.pin-cancel-btn {
+  border: 1px solid #e7c7c7;
+  background: #fff7f7;
+  color: #9f1d1d;
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 0.38rem 0.7rem;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 150ms, background 150ms, color 150ms;
+  flex-shrink: 0;
+}
+
+.pin-cancel-btn:hover {
+  border-color: #e19a9a;
+  background: #ffeaea;
+  color: #7f1d1d;
+}
+
+.pin-cancel-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* ── Radius + controls ──────────────────────────────────── */
 .radius-row {
   display: flex;
