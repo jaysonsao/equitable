@@ -1,8 +1,8 @@
 import os
 import json
 from pathlib import Path
-from flask import Flask, send_from_directory, Response, abort, jsonify
-from pymongo import MongoClient
+from flask import Flask, send_from_directory, Response, abort, jsonify, request
+from services import mongo, gemini
 
 ROOT = Path(__file__).parent.resolve()
 
@@ -29,12 +29,12 @@ def load_dot_env(filepath: Path) -> dict:
 
 
 dot_env = load_dot_env(ROOT / ".env")
-GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API") or dot_env.get("GOOGLE_MAPS_API", "")
-MONGO_URI = os.environ.get("MONGO_URI") or dot_env.get("MONGO_URI", "")
 
-# MongoDB connection
-mongo_client = MongoClient(MONGO_URI) if MONGO_URI else None
-db = mongo_client["equitable"] if mongo_client else None
+# Load env vars from .env into os.environ so services can read them
+for k, v in dot_env.items():
+    os.environ.setdefault(k, v)
+
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API", "")
 
 
 @app.route("/config.js")
@@ -45,18 +45,32 @@ def config_js():
 
 @app.route("/api/farmers-markets")
 def farmers_markets():
-    if db is None:
-        return jsonify({"error": "No MongoDB connection"}), 503
-    markets = list(db["farmers_markets"].find({}, {"_id": 0}))
-    return jsonify(markets)
+    try:
+        return jsonify(mongo.get_farmers_markets())
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
 
 
 @app.route("/api/income-inequality")
 def income_inequality():
-    if db is None:
-        return jsonify({"error": "No MongoDB connection"}), 503
-    data = list(db["income_inequality"].find({}, {"_id": 0}))
-    return jsonify(data)
+    try:
+        return jsonify(mongo.get_income_inequality())
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+
+
+@app.route("/api/gemini", methods=["POST"])
+def gemini_ask():
+    body = request.get_json(silent=True) or {}
+    neighborhood = body.get("neighborhood", "")
+    context = body.get("context", {})
+    if not neighborhood:
+        return jsonify({"error": "neighborhood is required"}), 400
+    try:
+        answer = gemini.ask_about_neighborhood(neighborhood, context)
+        return jsonify({"response": answer})
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
 
 
 @app.route("/", defaults={"req_path": ""})
@@ -80,8 +94,4 @@ def serve_static(req_path: str):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 3000))
     print(f"Boston map app running at http://localhost:{port}")
-    if mongo_client:
-        print("MongoDB connected")
-    else:
-        print("Warning: No MONGO_URI set — MongoDB disabled")
     app.run(host="0.0.0.0", port=port, debug=True)
