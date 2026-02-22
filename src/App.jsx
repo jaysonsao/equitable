@@ -68,6 +68,11 @@ const TRANSLATIONS = {
     inRadius: "In Radius", searching: "Searching...",
     locationsInRange: "location(s) in range",
     noLocationsMatched: "No locations matched this center + radius.",
+    selectionInsideZonesOnly: "Select a point inside an eligible Boston neighborhood zone.",
+    areaSearchNeedsPinMove: "Move the pin to a new point before searching this area.",
+    areaSearchInsideActiveOnly: "Select a point inside the active search circle, or clear the current search first.",
+    areaSearchHintActive: (r) => `Move the pin and search within the active ${r}-mile circle.`,
+    areaSearchHintRadius: (r) => `Run a focused ${r}-mile search around this point (uses current Radius value).`,
     noNeighborhood: "No neighborhood",
     loadingMap: "Loading map...", loadingGoogleMaps: "Loading Google Maps...",
     loadingBoundaries: "Loading neighborhood boundaries...",
@@ -121,6 +126,11 @@ const TRANSLATIONS = {
     inRadius: "En el Radio", searching: "Buscando...",
     locationsInRange: "lugar(es) encontrado(s)",
     noLocationsMatched: "No se encontraron lugares en este radio.",
+    selectionInsideZonesOnly: "Selecciona un punto dentro de una zona elegible de vecindario en Boston.",
+    areaSearchNeedsPinMove: "Mueve el pin a un nuevo punto antes de buscar en esta área.",
+    areaSearchInsideActiveOnly: "Selecciona un punto dentro del círculo activo, o limpia la búsqueda actual primero.",
+    areaSearchHintActive: (r) => `Mueve el pin y busca dentro del círculo activo de ${r} millas.`,
+    areaSearchHintRadius: (r) => `Realiza una búsqueda enfocada de ${r} millas alrededor de este punto (usa el radio actual).`,
     noNeighborhood: "Sin vecindario",
     loadingMap: "Cargando mapa...", loadingGoogleMaps: "Cargando Google Maps...",
     loadingBoundaries: "Cargando límites de vecindarios...",
@@ -473,10 +483,39 @@ const DEFAULT_LIMIT = 350;
 const PREVIEW_SAMPLE_PCT = 0.1;
 const METERS_PER_MILE = 1609.344;
 const AREA_PROMPT_PIN_PEEK_OFFSET_Y = -18;
+const PIN_CHANGE_EPSILON = 1e-6;
 
 function getNeighborhoodName(feature) {
   const name = feature.getProperty("name");
   return typeof name === "string" && name.trim() ? name.trim() : "Unknown Neighborhood";
+}
+
+function hasPinMoved(currentPin, nextPin) {
+  if (!currentPin || !nextPin) return true;
+  return (
+    Math.abs(Number(currentPin.lat) - Number(nextPin.lat)) > PIN_CHANGE_EPSILON ||
+    Math.abs(Number(currentPin.lng) - Number(nextPin.lng)) > PIN_CHANGE_EPSILON
+  );
+}
+
+function polygonContainsLatLng(polygonGeometry, latLng) {
+  if (!polygonGeometry || !latLng || !window.google?.maps?.geometry?.poly) return false;
+  const paths = polygonGeometry.getArray().map((ring) => ring.getArray());
+  if (!paths.length) return false;
+  const polygon = new window.google.maps.Polygon({ paths });
+  return window.google.maps.geometry.poly.containsLocation(latLng, polygon);
+}
+
+function geometryContainsLatLng(geometry, latLng) {
+  if (!geometry || !latLng) return false;
+  const type = geometry.getType();
+  if (type === "Polygon") {
+    return polygonContainsLatLng(geometry, latLng);
+  }
+  if (type === "MultiPolygon" || type === "GeometryCollection") {
+    return geometry.getArray().some((inner) => geometryContainsLatLng(inner, latLng));
+  }
+  return false;
 }
 
 function getMapStyles(theme) {
@@ -815,6 +854,7 @@ export default function App() {
       map,
       position: center,
       title: "Search center",
+      clickable: false,
       icon: {
         path: window.google.maps.SymbolPath.CIRCLE,
         scale: 7,
@@ -829,6 +869,7 @@ export default function App() {
       map,
       center,
       radius: radiusInMiles * METERS_PER_MILE,
+      clickable: false,
       strokeColor: "#B91C1C",
       strokeOpacity: 0.85,
       strokeWeight: 2,
@@ -959,9 +1000,10 @@ export default function App() {
   }, [radiusMiles]);
 
   const runAreaSearchAt = useCallback(async (pin, areaLabel = "this area") => {
-    if (!pin) return;
+    if (!pin) return false;
 
     const radius = getFocusedSearchRadiusMiles();
+
     const activePlaceTypes = normalizePlaceTypesInput(selectedTypes);
     const payload = {
       pin,
@@ -1014,15 +1056,18 @@ export default function App() {
       setHasSearched(false);
       restorePreview();
       setError(err.message || "Search failed");
+      return false;
     } finally {
       setSearching(false);
     }
+    return true;
   }, [applyPlaceTypeFilter, filterResultsByScope, getFocusedSearchRadiusMiles, placeMarkers, restorePreview, selectedTypes]);
 
   const openAreaSearchPrompt = useCallback((latLng, areaLabel = "this area") => {
     const map = mapRef.current;
     if (!map || !latLng || !infoWindowRef.current) return;
 
+    const tr = TRANSLATIONS[langRef.current] || TRANSLATIONS.en;
     const radius = getFocusedSearchRadiusMiles();
     const wrapper = document.createElement("div");
     wrapper.className = "info-window";
@@ -1032,19 +1077,23 @@ export default function App() {
 
     const hint = document.createElement("div");
     hint.className = "info-window-muted";
-    hint.textContent = `Run a focused ${radius}-mile search around this point (uses current Radius value).`;
+    hint.textContent = tr.areaSearchHintRadius(radius);
 
     const button = document.createElement("button");
     button.type = "button";
     button.className = "info-window-search-btn";
     button.textContent = "Search this area";
     button.disabled = searching;
-    button.addEventListener("click", () => {
-      runAreaSearchAtRef.current(
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const didStart = await runAreaSearchAtRef.current(
         { lat: latLng.lat(), lng: latLng.lng() },
         areaLabel
       );
-      infoWindowRef.current?.close();
+      if (didStart) {
+        infoWindowRef.current?.close();
+      }
     });
 
     wrapper.appendChild(title);
@@ -1143,6 +1192,30 @@ export default function App() {
         applyMapViewportSettings(mapScope, mapTheme, true);
         setTimeout(() => window.google.maps.event.trigger(map, "resize"), 100);
 
+        const isLatLngInEligibleZone = (latLng) => {
+          let inside = false;
+          map.data.forEach((feature) => {
+            if (inside) return;
+            const name = getNeighborhoodName(feature);
+            if (isExcludedNeighborhoodForSearch(name)) return;
+            const geometry = feature.getGeometry();
+            if (geometry && geometryContainsLatLng(geometry, latLng)) {
+              inside = true;
+            }
+          });
+          return inside;
+        };
+
+        const validateSelectionPoint = (latLng) => {
+          const tr = TRANSLATIONS[langRef.current] || TRANSLATIONS.en;
+          if (!isLatLngInEligibleZone(latLng)) {
+            setError("");
+            setStatus(tr.selectionInsideZonesOnly);
+            return false;
+          }
+          return true;
+        };
+
         map.data.addListener("click", async (event) => {
           lastFeatureClickTsRef.current = Date.now();
           const name = getNeighborhoodName(event.feature);
@@ -1153,6 +1226,11 @@ export default function App() {
             setMetricsError("");
             setMetricsLoading(false);
             setStatus(`${name} has no locations and is excluded from search.`);
+            infoWindowRef.current?.close();
+            return;
+          }
+
+          if (!validateSelectionPoint(event.latLng)) {
             infoWindowRef.current?.close();
             return;
           }
@@ -1196,6 +1274,10 @@ export default function App() {
 
         map.addListener("click", (event) => {
           if (Date.now() - lastFeatureClickTsRef.current < 120) return;
+          if (!validateSelectionPoint(event.latLng)) {
+            infoWindowRef.current?.close();
+            return;
+          }
           const nextPin = { lat: event.latLng.lat(), lng: event.latLng.lng() };
           setDroppedPin(nextPin);
           openAreaSearchPromptRef.current(event.latLng, "Selected area");
