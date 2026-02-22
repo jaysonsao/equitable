@@ -310,6 +310,32 @@ function giniToColor(t) {
   return `rgb(${r},${g},${b})`;
 }
 
+function darkenColor(color, amount = 0.12) {
+  if (typeof color !== "string") return color;
+
+  const clamp = (value) => Math.max(0, Math.min(255, Math.round(value)));
+  const scale = 1 - amount;
+
+  const rgbMatch = color.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+  if (rgbMatch) {
+    const r = clamp(Number(rgbMatch[1]) * scale);
+    const g = clamp(Number(rgbMatch[2]) * scale);
+    const b = clamp(Number(rgbMatch[3]) * scale);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  const hexMatch = color.match(/^#([0-9a-f]{6})$/i);
+  if (hexMatch) {
+    const hex = hexMatch[1];
+    const r = clamp(parseInt(hex.slice(0, 2), 16) * scale);
+    const g = clamp(parseInt(hex.slice(2, 4), 16) * scale);
+    const b = clamp(parseInt(hex.slice(4, 6), 16) * scale);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  return color;
+}
+
 const GOOGLE_MAPS_API_KEY =
   typeof __GOOGLE_MAPS_API__ === "string" ? __GOOGLE_MAPS_API__.trim() : "";
 
@@ -537,6 +563,7 @@ export default function App() {
   const pinMarkerRef = useRef(null);
   const centerMarkerRef = useRef(null);
   const radiusCircleRef = useRef(null);
+  const hoveredNeighborhoodRef = useRef("");
   const runAreaSearchAtRef = useRef(async () => {});
   const openAreaSearchPromptRef = useRef(() => {});
   const lastFeatureClickTsRef = useRef(0);
@@ -611,13 +638,19 @@ export default function App() {
         fillOpacity = 0.7;
       }
 
+      const isHovered = hoveredNeighborhoodRef.current === name;
+      if (isHovered) {
+        fillColor = darkenColor(fillColor, 0.14);
+        fillOpacity = Math.min(0.9, fillOpacity + 0.12);
+      }
+
       return {
         clickable: true,
         fillColor,
         fillOpacity,
-        strokeColor: "#555",
-        strokeOpacity: 0.5,
-        strokeWeight: 1,
+        strokeColor: isHovered ? "#2f2f2f" : "#555",
+        strokeOpacity: isHovered ? 0.85 : 0.5,
+        strokeWeight: isHovered ? 1.6 : 1,
       };
     });
   }, []);
@@ -993,6 +1026,16 @@ export default function App() {
             if (active) setMetricsLoading(false);
           }
 
+        });
+
+        map.data.addListener("mouseover", (event) => {
+          hoveredNeighborhoodRef.current = getNeighborhoodName(event.feature);
+          refreshBoundaryStyles();
+        });
+
+        map.data.addListener("mouseout", () => {
+          hoveredNeighborhoodRef.current = "";
+          refreshBoundaryStyles();
         });
 
         map.addListener("click", (event) => {
